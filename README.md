@@ -382,8 +382,8 @@ An example object maps parameter or column names to string values:
 
 ```json
 {
-  "input": "M 2",
-  "command": "move 2",
+  "input": "42",
+  "command": "calculate total",
   "expected_status": "accepted"
 }
 ```
@@ -579,7 +579,13 @@ Mutation descriptions should use:
 
 ### Value Mutation Rules
 
-Values are strings. Before selecting a mutation rule, compute:
+Values are strings. The mutator infers a portable value type from the
+string content, then changes the value without using project-specific
+semantics. Random choices must be pseudo-random and deterministic for a
+fixed mutation path and original value, so repeated runs over the same IR
+produce the same mutation set.
+
+Before selecting a mutation rule, compute:
 
 ```text
 trimmed = value with leading and trailing whitespace removed
@@ -587,31 +593,34 @@ trimmed = value with leading and trailing whitespace removed
 
 Rules are applied in this order:
 
-1. If `trimmed` contains a comma, treat it as a comma-delimited list. Split on commas, trim each item, mutate the first item recursively using these same rules, and join the list with `, `.
-2. If `trimmed` is a base-10 integer, mutate it to the decimal representation of `integer + 1`.
-3. If lowercase `trimmed` is one of the command swaps below, mutate to the mapped value.
-4. Otherwise, mutate to `MUTATED: ` followed by the original untrimmed value.
+1. If `trimmed` contains a comma, treat it as a comma-delimited list. Split on commas, trim each item, mutate one selected item recursively using these same rules, and join the list with `, `. The selected item must be chosen pseudo-randomly and deterministically.
+2. If lowercase `trimmed` is `true` or `false`, mutate it to the opposite lowercase boolean value.
+3. If lowercase `trimmed` is `null`, `nil`, or `none`, mutate it to a non-empty dithered string.
+4. If `trimmed` is a base-10 integer, mutate it to the decimal representation of the integer plus a pseudo-random nonzero integer delta.
+5. If `trimmed` is a finite base-10 floating point number, mutate it to the decimal representation of the number plus a pseudo-random nonzero floating point delta.
+6. If `trimmed` is an ISO-8601 date, time, or date-time value, mutate it by a pseudo-random nonzero amount appropriate to the represented precision.
+7. If `trimmed` is a recognized duration value, mutate it by a pseudo-random nonzero amount while preserving valid duration syntax.
+8. Otherwise, dither the original untrimmed string.
 
-Command swaps:
+String dithering must produce a different string by applying one small
+edit, such as inserting a character, deleting a character, replacing a
+character, swapping adjacent characters, or changing character case. Empty
+strings are dithered by inserting a character.
 
-```text
-move     -> stay
-stay     -> move
-move 2   -> shoot 2
-shoot 2  -> move 2
-m 2      -> s 2
-s 2      -> m 2
-```
+The portable mutator must not define command, enum, or domain-specific
+swaps. Project-specific semantic mutations belong in the project adapter
+or in a project-specific mutator extension.
 
 Examples:
 
 ```text
-20                  -> 21
-2, 5, 8             -> 3, 5, 8
-move 2              -> shoot 2
-shoot 2             -> move 2
-accepted            -> MUTATED: accepted
-message with spaces -> MUTATED: message with spaces
+20                  -> 27
+3.14                -> 2.89
+true                -> false
+2026-05-13          -> 2026-05-15
+2, 5, 8             -> 2, 11, 8
+accepted            -> accfpted
+message with spaces -> message with spcaes
 ```
 
 ### Equivalent Mutation Filters
@@ -709,8 +718,8 @@ Example:
 
 ```text
 total=2 killed=1 survived=1 errors=0
-killed   $.scenarios[0].examples[0].count: 20 -> 21
-survived $.scenarios[1].examples[0].status: accepted -> MUTATED: accepted
+killed   $.scenarios[0].examples[0].count: 20 -> 27
+survived $.scenarios[1].examples[0].status: accepted -> accfpted
   output:
 <test runner output>
 ```
@@ -732,9 +741,9 @@ When `--json` is supplied, the report must be a JSON object:
       "Mutation": {
         "ID": "m1",
         "Path": "$.scenarios[0].examples[0].count",
-        "Description": "$.scenarios[0].examples[0].count: 20 -> 21",
+        "Description": "$.scenarios[0].examples[0].count: 20 -> 27",
         "Original": "20",
-        "Mutated": "21"
+        "Mutated": "27"
       },
       "Status": "killed",
       "Output": "<test runner output>",
@@ -809,7 +818,7 @@ A conforming implementation can be validated with these cases:
 12. Normal acceptance script fails if parsing, generation, or generated tests fail.
 13. Mutator generates mutations only for example cell values.
 14. Mutator produces stable mutation IDs, paths, and descriptions.
-15. Mutator applies integer, comma-list, command-swap, and generic-string value mutation rules.
+15. Mutator applies comma-list, boolean, null-like, integer, floating point, date/time, duration, and string-dithering value mutation rules.
 16. Mutator deep-copies the IR before applying each mutation.
 17. Mutator classifies failing generated tests as `killed`.
 18. Mutator classifies passing generated tests as `survived`.
