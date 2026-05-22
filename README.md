@@ -2,7 +2,9 @@
 
 ## Purpose
 
-This document defines a portable acceptance-test pipeline that agents can install in a new project. The pipeline turns a small Gherkin feature file into a JSON intermediate representation, generates executable acceptance tests from that IR, runs those tests, and mutation-tests the acceptance examples to measure whether those tests are fully connected to the application they test.
+This document defines a portable acceptance-test pipeline that agents can install in a new project. The pipeline turns a small Gherkin feature file into a JSON intermediate representation, generates executable acceptance tests from that IR, runs those tests, and runs acceptance mutation against the Gherkin examples to measure whether those tests are fully connected to the application they test.
+
+In this specification, acceptance mutation means mutating Gherkin example values in the specification-derived JSON IR. It does not mean conventional mutation testing of application source code.
 
 This specification is intentionally implementation-language and project neutral. The strategy it implements should work for any language and any project.
 
@@ -33,7 +35,7 @@ feature file
   -> mutation report
 ```
 
-The normal run proves that the project satisfies the feature file. The mutation run probes whether the generated acceptance tests are strong enough to fail when example data is changed.
+The normal run proves that the project satisfies the feature file. The acceptance mutation run probes whether the generated acceptance tests are strong enough to fail when example data is changed.
 
 ## Required Project Layout
 
@@ -69,8 +71,8 @@ An implementation must provide:
 5. Project step handlers: Bind exact step text to project behavior and assertions.
 6. Test runner adapter: Runs generated tests and captures status, output, and error text.
 7. Mutator: Builds and applies deterministic example-value mutations.
-8. Mutation reporter: Emits text or JSON reports and returns the correct exit code.
-9. Convenience scripts: Provide a stable one-command normal run and mutation run.
+8. Acceptance mutation reporter: Emits text or JSON reports and returns the correct exit code.
+9. Convenience scripts: Provide a stable one-command normal run and acceptance mutation run.
 
 ## Normal Acceptance Script
 
@@ -100,7 +102,7 @@ Script requirements:
 3. Treat parser, generator, and test failures as script failures.
 4. Never run generated tests against the source feature file directly; generated tests must be created from the JSON IR every time.
 
-## Mutation Script
+## Acceptance Mutation Script
 
 Agents should install a script equivalent to this POSIX shell example:
 
@@ -111,7 +113,7 @@ set -eu
 gherkin-mutator --feature features/a-feature.feature "$@"
 ```
 
-The mutator command owns parsing, mutation, generation, test execution, and reporting.
+The mutator command owns parsing, Gherkin example mutation, generation, test execution, and reporting.
 
 ## Gherkin Parser Command
 
@@ -525,8 +527,11 @@ Options:
                       Values less than 1 must be treated as 1.
 
   --timeout <duration>
-                      Timeout for the full mutation run.
+                      Timeout for the full acceptance mutation run.
                       Duration syntax is implementation-defined but should support seconds.
+
+  --level <level>     Differential mutation level: full, hard, or soft.
+                      Default: hard.
 
   --json              Emit JSON report instead of text report.
 ```
@@ -539,7 +544,7 @@ Exit codes:
 2  command-line usage or option parsing error
 ```
 
-## Mutation Model
+## Gherkin Example Mutation Model
 
 The mutator creates candidate mutations from scenario example values. It does not mutate feature names, scenario names, step text, step keywords, background steps, or example headers.
 
@@ -634,7 +639,86 @@ Filter requirements:
 3. The report's `total` count must include only mutations that were executed.
 4. Filtered mutations should not appear in the result list unless the project explicitly adds a separate skipped report.
 
-## Mutation Execution
+### Differential Mutation
+
+Acceptance mutation may be run differentially. A differential run reuses previous successful mutation results when it can prove that the relevant feature content and mutation implementation have not changed. Differential mutation is an optimization only; it must not change the meaning of killed, survived, or error results.
+
+There are two reuse mechanisms:
+
+1. A feature mutation stamp may be used as a whole-file shortcut when the feature has no scenario manifest and the selected level is not `full`. The stamp records a hash of the feature content excluding the stamp line itself. If the stamp is present and valid, the mutator may skip the entire feature and exit successfully.
+2. A scenario manifest may be used for scenario-level reuse. The manifest records enough information to decide which scenarios can be skipped and which scenarios must be rerun.
+
+A feature mutation stamp should use this comment form:
+
+```text
+# mutation-stamp: sha256=<feature-content-hash>
+```
+
+The feature content hash must be computed over the feature file after removing the first mutation-stamp line. A stale, missing, malformed, or mismatched stamp must not be trusted.
+
+A scenario manifest should be stored as a comment block near the top of the feature file:
+
+```text
+# acceptance-mutation-manifest-begin
+# { ... JSON manifest ... }
+# acceptance-mutation-manifest-end
+```
+
+The JSON manifest must contain:
+
+```json
+{
+  "version": 1,
+  "tested_at": "<timestamp>",
+  "feature_name": "<feature name>",
+  "feature_path": "<feature path>",
+  "background_hash": "<hash>",
+  "implementation_hash": "<hash>",
+  "scenarios": [
+    {
+      "index": 0,
+      "name": "<scenario name>",
+      "scenario_hash": "<hash>",
+      "mutation_count": 0,
+      "result": {
+        "Total": 0,
+        "Killed": 0,
+        "Survived": 0,
+        "Errors": 0
+      },
+      "tested_at": "<timestamp>"
+    }
+  ]
+}
+```
+
+The `background_hash` must cover all background steps, because a background change can affect every scenario. The `scenario_hash` must cover the scenario name, scenario steps, example headers, and example values. Header order must be deterministic. The `implementation_hash` must identify the acceptance mutation implementation and every project adapter component whose behavior can affect mutation generation, filtering, execution, or classification.
+
+When a scenario manifest is accepted, a scenario may be skipped only when all of these are true:
+
+1. The manifest version is supported.
+2. The manifest feature name and feature path match the current feature.
+3. The manifest background hash matches the current background hash.
+4. The manifest implementation hash is valid for the selected differential level.
+5. The manifest has an entry for the same scenario index.
+6. The entry scenario name and scenario hash match the current scenario.
+7. The entry has zero survived mutations and zero errors.
+
+Skipped scenarios keep their previous manifest entries, including their previous `tested_at` values. Executed scenarios receive new result summaries and timestamps. Deleted scenarios must be removed from the next manifest. A successful acceptance mutation run should write a fresh scenario manifest and a fresh feature mutation stamp.
+
+Differential levels:
+
+```text
+full  ignore stamps and manifests; execute every mutation
+hard  reuse only when feature identity, scenario content, background content,
+      and implementation hash all match
+soft  reuse when feature identity, scenario content, and background content
+      match, even if the implementation hash changed
+```
+
+`hard` is the default because it avoids reusing results after changes to the parser, generator, mutator, filters, runner adapter, or runtime. `soft` is useful when implementation changes are known not to affect acceptance mutation behavior. `full` is useful for scheduled verification, baseline refreshes, and debugging stale-manifest suspicion.
+
+## Acceptance Mutation Execution
 
 For each mutation:
 
@@ -664,7 +748,9 @@ For each mutation:
 
 Parallel workers may execute different mutations concurrently. Each mutation must write only inside its own mutation work directory.
 
-The timeout applies to the full mutation run. When the timeout expires, unfinished mutations should be reported as `error` with useful timeout text.
+The timeout applies to the full acceptance mutation run. When the timeout expires, unfinished mutations should be reported as `error` with useful timeout text.
+
+If differential mutation skips scenarios, the report should include the skipped scenario count and skipped mutation count separately from the executed mutation totals.
 
 ## Result Classification
 
@@ -690,12 +776,18 @@ A survived mutation means the acceptance tests did not detect the changed specif
 
 An error is not a test-quality result; it means the mutation could not be evaluated reliably.
 
-## Text Mutation Report
+## Text Acceptance Mutation Report
 
 The default text report starts with one summary line:
 
 ```text
 total=<total> killed=<killed> survived=<survived> errors=<errors>
+```
+
+When differential mutation skips scenarios, the report should also include:
+
+```text
+skipped_scenarios=<count> skipped_mutations=<count>
 ```
 
 It then prints one line per result:
@@ -724,7 +816,7 @@ survived $.scenarios[1].examples[0].status: accepted -> accfpted
 <test runner output>
 ```
 
-## JSON Mutation Report
+## JSON Acceptance Mutation Report
 
 When `--json` is supplied, the report must be a JSON object:
 
@@ -761,6 +853,8 @@ summary.Total     number
 summary.Killed    number
 summary.Survived  number
 summary.Errors    number
+summary.SkippedScenarios  number, when differential mutation skipped scenarios
+summary.SkippedMutations  number, when differential mutation skipped scenarios
 results           array
 ```
 
@@ -793,12 +887,12 @@ When installing this pipeline in a new project, an agent should:
 7. Add the normal acceptance script.
 8. Run the normal acceptance script and confirm generated tests pass.
 9. Implement the mutator command using the same parser, IR, generator, and test runner adapter.
-10. Add the mutation script.
-11. Run the mutation script and inspect survived mutations.
+10. Add the acceptance mutation script.
+11. Run the acceptance mutation script and inspect survived mutations.
 12. Add or improve acceptance scenarios until important mutations are killed.
 13. Add parser, generator, runtime, and mutator unit tests.
 14. Add the normal acceptance script to the project's regular verification workflow.
-15. Add the mutation script to an explicit quality workflow, because mutation testing may be slower than normal verification.
+15. Add the acceptance mutation script to an explicit quality workflow, because acceptance mutation may be slower than normal verification.
 
 ## Conformance Checklist
 
@@ -825,3 +919,9 @@ A conforming implementation can be validated with these cases:
 19. Mutator classifies parsing, generation, timeout, and infrastructure failures as `error`.
 20. Mutator exits with `1` when any mutation survives or errors.
 21. Mutator emits text and JSON reports in stable order.
+22. Mutator supports differential levels `full`, `hard`, and `soft`, with `hard` as the default.
+23. Mutator ignores stamps and manifests at `full` level.
+24. Mutator at `hard` level skips only clean manifest scenarios whose feature identity, background hash, scenario hash, and implementation hash match.
+25. Mutator at `soft` level skips clean manifest scenarios whose feature identity, background hash, and scenario hash match, even when the implementation hash differs.
+26. Mutator rejects stale manifests when the background hash changes, and reruns changed scenarios when their scenario hash changes.
+27. Mutator writes a fresh scenario manifest and feature mutation stamp after a successful acceptance mutation run.
