@@ -530,6 +530,10 @@ Options:
                       Timeout for the full acceptance mutation run.
                       Duration syntax is implementation-defined but should support seconds.
 
+  --status-interval <duration>
+                      Interval for periodic status lines while mutations are running.
+                      Default: 30s. A value of 0 disables periodic status.
+
   --level <level>     Differential mutation level: full, hard, or soft.
                       Default: hard.
 
@@ -752,6 +756,28 @@ The timeout applies to the full acceptance mutation run. When the timeout expire
 
 If differential mutation skips scenarios, the report should include the skipped scenario count and skipped mutation count separately from the executed mutation totals.
 
+## Acceptance Mutation Status
+
+The mutator should emit periodic status lines while an acceptance mutation run is active, so agents and continuous-integration logs can distinguish a long-running run from a hung process.
+
+Status lines must be written to standard error. Standard output is reserved for the final text or JSON report, and `--json` output must remain valid JSON without progress records mixed into it.
+
+The mutator should emit:
+
+1. One status line after mutation discovery and before executing the first mutation.
+2. One status line at least every `--status-interval` while at least one mutation is still running.
+3. One status line when execution finishes, before the final report is emitted.
+
+Status lines should be single-line, stable, human-readable records using this form:
+
+```text
+status elapsed=<duration> total=<total> completed=<completed> running=<running> killed=<killed> survived=<survived> errors=<errors> skipped_scenarios=<count> skipped_mutations=<count>
+```
+
+`skipped_scenarios` and `skipped_mutations` may be omitted when no differential mutation skip occurred. `completed` counts only executed mutations that have reached `killed`, `survived`, or `error`. `running` counts mutations currently assigned to workers. The final status line should have `running=0` and `completed` equal to the executed mutation total.
+
+The status interval is best-effort: implementations may delay a status line while synchronously parsing, generating, or waiting for a test runner, but long-running worker orchestration should continue to report progress.
+
 ## Result Classification
 
 Each mutation has one of these statuses:
@@ -919,9 +945,10 @@ A conforming implementation can be validated with these cases:
 19. Mutator classifies parsing, generation, timeout, and infrastructure failures as `error`.
 20. Mutator exits with `1` when any mutation survives or errors.
 21. Mutator emits text and JSON reports in stable order.
-22. Mutator supports differential levels `full`, `hard`, and `soft`, with `hard` as the default.
-23. Mutator ignores stamps and manifests at `full` level.
-24. Mutator at `hard` level skips only clean manifest scenarios whose feature identity, background hash, scenario hash, and implementation hash match.
-25. Mutator at `soft` level skips clean manifest scenarios whose feature identity, background hash, and scenario hash match, even when the implementation hash differs.
-26. Mutator rejects stale manifests when the background hash changes, and reruns changed scenarios when their scenario hash changes.
-27. Mutator writes a fresh scenario manifest and feature mutation stamp after a successful acceptance mutation run.
+22. Mutator emits periodic status lines to standard error without corrupting text or JSON reports on standard output.
+23. Mutator supports differential levels `full`, `hard`, and `soft`, with `hard` as the default.
+24. Mutator ignores stamps and manifests at `full` level.
+25. Mutator at `hard` level skips only clean manifest scenarios whose feature identity, background hash, scenario hash, and implementation hash match.
+26. Mutator at `soft` level skips clean manifest scenarios whose feature identity, background hash, and scenario hash match, even when the implementation hash differs.
+27. Mutator rejects stale manifests when the background hash changes, and reruns changed scenarios when their scenario hash changes.
+28. Mutator writes a fresh scenario manifest and feature mutation stamp after a successful acceptance mutation run.
