@@ -45,10 +45,13 @@ type Mutation struct {
 }
 
 type Config struct {
-	Feature      gherkin.Feature
-	WorkDir      string
-	GeneratedDir string
-	Workers      int
+	Feature            gherkin.Feature
+	FeaturePath        string
+	WorkDir            string
+	GeneratedDir       string
+	Workers            int
+	Level              string
+	ImplementationHash string
 }
 
 type Job struct {
@@ -76,10 +79,12 @@ type RunnerResult struct {
 }
 
 type Summary struct {
-	Total    int `json:"Total"`
-	Killed   int `json:"Killed"`
-	Survived int `json:"Survived"`
-	Errors   int `json:"Errors"`
+	Total            int `json:"Total"`
+	Killed           int `json:"Killed"`
+	Survived         int `json:"Survived"`
+	Errors           int `json:"Errors"`
+	SkippedScenarios int `json:"SkippedScenarios,omitempty"`
+	SkippedMutations int `json:"SkippedMutations,omitempty"`
 }
 
 type Report struct {
@@ -152,12 +157,27 @@ func Run(ctx context.Context, cfg Config, runner Runner) (Report, error) {
 	if cfg.GeneratedDir == "" {
 		cfg.GeneratedDir = filepath.Join(cfg.WorkDir, "generated")
 	}
+	if cfg.Level == "" {
+		cfg.Level = "hard"
+	}
 
 	mutations := Discover(cfg.Feature)
-	report := Report{
-		Summary: Summary{Total: len(mutations)},
-		Results: make([]Result, len(mutations)),
+	skip := acceptedSkips(cfg, mutations)
+	executableIndexes := make([]int, 0, len(mutations))
+	for i, mutation := range mutations {
+		if skip[mutation.Scenario] {
+			continue
+		}
+		executableIndexes = append(executableIndexes, i)
 	}
+	report := Report{
+		Summary: Summary{Total: len(executableIndexes)},
+		Results: make([]Result, len(executableIndexes)),
+	}
+	for range skip {
+		report.Summary.SkippedScenarios++
+	}
+	report.Summary.SkippedMutations = len(mutations) - len(executableIndexes)
 	if len(mutations) == 0 {
 		return report, nil
 	}
@@ -175,8 +195,8 @@ func Run(ctx context.Context, cfg Config, runner Runner) (Report, error) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for index := range jobs {
-				mutation := mutations[index]
+			for resultIndex := range jobs {
+				mutation := mutations[executableIndexes[resultIndex]]
 				mutationWorkDir := filepath.Join(cfg.WorkDir, "mutations", mutation.ID)
 				featureJSON := filepath.Join(mutationWorkDir, "feature.json")
 				if err := writeJSON(featureJSON, Apply(cfg.Feature, mutation)); err != nil {
@@ -184,7 +204,7 @@ func Run(ctx context.Context, cfg Config, runner Runner) (Report, error) {
 					if firstErr == nil {
 						firstErr = err
 					}
-					report.Results[index] = makeResult(mutation, RunnerResult{Outcome: InfrastructureError, Error: err.Error()})
+					report.Results[resultIndex] = makeResult(mutation, RunnerResult{Outcome: InfrastructureError, Error: err.Error()})
 					report.Summary.Errors++
 					mu.Unlock()
 					continue
@@ -199,7 +219,7 @@ func Run(ctx context.Context, cfg Config, runner Runner) (Report, error) {
 				classified := makeResult(mutation, result)
 
 				mu.Lock()
-				report.Results[index] = classified
+				report.Results[resultIndex] = classified
 				switch classified.Status {
 				case Killed:
 					report.Summary.Killed++
@@ -213,7 +233,7 @@ func Run(ctx context.Context, cfg Config, runner Runner) (Report, error) {
 		}()
 	}
 
-	for i := range mutations {
+	for i := range executableIndexes {
 		select {
 		case <-ctx.Done():
 			close(jobs)
@@ -226,6 +246,61 @@ func Run(ctx context.Context, cfg Config, runner Runner) (Report, error) {
 	wg.Wait()
 
 	return report, firstErr
+}
+
+func acceptedSkips(cfg Config, mutations []Mutation) map[int]bool {
+	if cfg.Level == "full" || cfg.FeaturePath == "" {
+		return nil
+	}
+	metadata, ok := ReadMutationMetadata(cfg.FeaturePath)
+	if !ok {
+		return nil
+	}
+	if len(metadata.Manifest.Scenarios) == 0 && FeatureStampValid(cfg.FeaturePath) {
+		skip := map[int]bool{}
+		for i := range cfg.Feature.Scenarios {
+			skip[i] = true
+		}
+		return skip
+	}
+	current := NewManifest(cfg.FeaturePath, cfg.Feature, Report{}, cfg.ImplementationHash)
+	skip := map[int]bool{}
+	for _, entry := range metadata.Manifest.Scenarios {
+		if !manifestEntryReusable(metadata.Manifest, current, entry, cfg.Level, cfg.Feature, mutations) {
+			continue
+		}
+		skip[entry.Index] = true
+	}
+	return skip
+}
+
+func manifestEntryReusable(old manifest, current manifest, entry scenarioManifest, level string, feature gherkin.Feature, mutations []Mutation) bool {
+	if old.Version != 1 {
+		return false
+	}
+	if old.FeatureName != current.FeatureName || old.FeaturePath != current.FeaturePath {
+		return false
+	}
+	if old.BackgroundHash != current.BackgroundHash {
+		return false
+	}
+	if level == "hard" && old.ImplementationHash != current.ImplementationHash {
+		return false
+	}
+	if entry.Index < 0 || entry.Index >= len(feature.Scenarios) {
+		return false
+	}
+	scenario := feature.Scenarios[entry.Index]
+	if entry.Name != scenario.Name || entry.ScenarioHash != hashJSON(scenario) {
+		return false
+	}
+	if entry.Result.Survived != 0 || entry.Result.Errors != 0 {
+		return false
+	}
+	if entry.MutationCount != mutationCountForScenario(mutations, entry.Index) {
+		return false
+	}
+	return true
 }
 
 func MutateValue(path string, value string) string {
@@ -293,7 +368,15 @@ func makeResult(mutation Mutation, runnerResult RunnerResult) Result {
 }
 
 func WriteTextReport(w interface{ Write([]byte) (int, error) }, report Report) error {
-	if _, err := fmt.Fprintf(w, "total=%d killed=%d survived=%d errors=%d\n", report.Summary.Total, report.Summary.Killed, report.Summary.Survived, report.Summary.Errors); err != nil {
+	if _, err := fmt.Fprintf(w, "total=%d killed=%d survived=%d errors=%d", report.Summary.Total, report.Summary.Killed, report.Summary.Survived, report.Summary.Errors); err != nil {
+		return err
+	}
+	if report.Summary.SkippedScenarios > 0 || report.Summary.SkippedMutations > 0 {
+		if _, err := fmt.Fprintf(w, " skipped_scenarios=%d skipped_mutations=%d", report.Summary.SkippedScenarios, report.Summary.SkippedMutations); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
 		return err
 	}
 	for _, result := range report.Results {

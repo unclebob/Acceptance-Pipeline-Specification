@@ -24,9 +24,9 @@ func run() int {
 	var timeoutText string
 	var statusIntervalText string
 	var level string
-	var runnerText string
 	var runnerWorkerText string
 	var implementationHash string
+	var implementationHashSet bool
 	var jsonReport bool
 
 	flags := flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
@@ -38,9 +38,12 @@ func run() int {
 	flags.StringVar(&timeoutText, "timeout", "", "timeout for the full mutation run")
 	flags.StringVar(&statusIntervalText, "status-interval", "30s", "periodic status interval")
 	flags.StringVar(&level, "level", "hard", "differential mutation level: full, hard, or soft")
-	flags.StringVar(&runnerText, "runner", "", "simple runner adapter command")
 	flags.StringVar(&runnerWorkerText, "runner-worker", "", "persistent runner adapter command")
-	flags.StringVar(&implementationHash, "implementation-hash", "unknown", "implementation hash for manifest writing")
+	flags.Func("implementation-hash", "override generated metadata implementation hash", func(value string) error {
+		implementationHash = value
+		implementationHashSet = true
+		return nil
+	})
 	flags.BoolVar(&jsonReport, "json", false, "emit JSON report")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		return 2
@@ -49,12 +52,8 @@ func run() int {
 		fmt.Fprintln(os.Stderr, "--level must be full, hard, or soft")
 		return 2
 	}
-	if runnerText == "" && runnerWorkerText == "" {
-		fmt.Fprintln(os.Stderr, "--runner or --runner-worker is required")
-		return 2
-	}
-	if runnerText != "" && runnerWorkerText != "" {
-		fmt.Fprintln(os.Stderr, "--runner and --runner-worker are mutually exclusive")
+	if runnerWorkerText == "" {
+		fmt.Fprintln(os.Stderr, "--runner-worker is required")
 		return 2
 	}
 
@@ -93,30 +92,34 @@ func run() int {
 		fmt.Fprintf(os.Stderr, "status elapsed=0s total=%d completed=0 running=0 killed=0 survived=0 errors=0\n", len(mutation.Discover(feature)))
 	}
 
-	var runner mutation.Runner
-	var closeRunner func() error
-	if runnerWorkerText != "" {
-		workerRunner, err := mutation.NewWorkerPoolRunner(ctx, mutation.WorkerPoolConfig{
-			Command: strings.Fields(runnerWorkerText),
-			Workers: workers,
-		})
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		runner = workerRunner
-		closeRunner = workerRunner.Close
-	} else {
-		runner = mutation.CommandRunner{Command: strings.Fields(runnerText)}
-		closeRunner = func() error { return nil }
+	effectiveGeneratedDir := generatedDir
+	if effectiveGeneratedDir == "" {
+		effectiveGeneratedDir = workDir + "/generated"
 	}
-	defer closeRunner()
+	hashOverride := ""
+	if implementationHashSet {
+		hashOverride = implementationHash
+	}
+	implementationHash = mutation.ResolveImplementationHash(effectiveGeneratedDir, featurePath, hashOverride)
+
+	runner, err := mutation.NewWorkerPoolRunner(ctx, mutation.WorkerPoolConfig{
+		Command: strings.Fields(runnerWorkerText),
+		Workers: workers,
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	defer runner.Close()
 
 	report, err := mutation.Run(ctx, mutation.Config{
-		Feature:      feature,
-		WorkDir:      workDir,
-		GeneratedDir: generatedDir,
-		Workers:      workers,
+		Feature:            feature,
+		FeaturePath:        featurePath,
+		WorkDir:            workDir,
+		GeneratedDir:       generatedDir,
+		Workers:            workers,
+		Level:              level,
+		ImplementationHash: implementationHash,
 	}, runner)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -127,12 +130,10 @@ func run() int {
 		fmt.Fprintf(os.Stderr, "status elapsed=done total=%d completed=%d running=0 killed=%d survived=%d errors=%d\n", report.Summary.Total, completed, report.Summary.Killed, report.Summary.Survived, report.Summary.Errors)
 	}
 
-	success := report.Summary.Survived == 0 && report.Summary.Errors == 0 && err == nil
-	if success {
-		if manifestErr := mutation.WriteManifestAndStamp(featurePath, feature, report, implementationHash); manifestErr != nil {
-			fmt.Fprintln(os.Stderr, manifestErr)
-			err = manifestErr
-		}
+	writeStamp := report.Summary.Survived == 0 && report.Summary.Errors == 0 && err == nil
+	if manifestErr := mutation.WriteMutationMetadata(featurePath, feature, report, implementationHash, level, writeStamp); manifestErr != nil {
+		fmt.Fprintln(os.Stderr, manifestErr)
+		err = manifestErr
 	}
 
 	if jsonReport {
