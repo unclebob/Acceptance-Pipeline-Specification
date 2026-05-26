@@ -88,10 +88,6 @@ func run() int {
 		return 2
 	}
 
-	if statusInterval > 0 {
-		fmt.Fprintf(os.Stderr, "status elapsed=0s total=%d completed=0 running=0 killed=0 survived=0 errors=0\n", len(mutation.Discover(feature)))
-	}
-
 	effectiveGeneratedDir := generatedDir
 	if effectiveGeneratedDir == "" {
 		effectiveGeneratedDir = workDir + "/generated"
@@ -120,14 +116,11 @@ func run() int {
 		Workers:            workers,
 		Level:              level,
 		ImplementationHash: implementationHash,
+		StatusInterval:     statusInterval,
+		Status:             writeStatus,
 	}, runner)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-	}
-
-	if statusInterval > 0 {
-		completed := report.Summary.Killed + report.Summary.Survived + report.Summary.Errors
-		fmt.Fprintf(os.Stderr, "status elapsed=done total=%d completed=%d running=0 killed=%d survived=%d errors=%d\n", report.Summary.Total, completed, report.Summary.Killed, report.Summary.Survived, report.Summary.Errors)
 	}
 
 	writeStamp := report.Summary.Survived == 0 && report.Summary.Errors == 0 && err == nil
@@ -152,4 +145,20 @@ func run() int {
 		return 1
 	}
 	return 0
+}
+
+func writeStatus(status mutation.StatusSnapshot) {
+	fmt.Fprintf(os.Stderr, "status elapsed=%s total=%d completed=%d running=%d killed=%d survived=%d errors=%d",
+		status.Elapsed.Round(time.Millisecond),
+		status.Total,
+		status.Completed,
+		status.Running,
+		status.Killed,
+		status.Survived,
+		status.Errors,
+	)
+	if status.SkippedScenarios > 0 || status.SkippedMutations > 0 {
+		fmt.Fprintf(os.Stderr, " skipped_scenarios=%d skipped_mutations=%d", status.SkippedScenarios, status.SkippedMutations)
+	}
+	fmt.Fprintln(os.Stderr)
 }

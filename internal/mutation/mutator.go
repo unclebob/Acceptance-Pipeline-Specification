@@ -52,6 +52,8 @@ type Config struct {
 	Workers            int
 	Level              string
 	ImplementationHash string
+	StatusInterval     time.Duration
+	Status             func(StatusSnapshot)
 }
 
 type Job struct {
@@ -90,6 +92,18 @@ type Summary struct {
 type Report struct {
 	Summary Summary  `json:"summary"`
 	Results []Result `json:"results"`
+}
+
+type StatusSnapshot struct {
+	Elapsed          time.Duration
+	Total            int
+	Completed        int
+	Running          int
+	Killed           int
+	Survived         int
+	Errors           int
+	SkippedScenarios int
+	SkippedMutations int
 }
 
 type Result struct {
@@ -178,7 +192,13 @@ func Run(ctx context.Context, cfg Config, runner Runner) (Report, error) {
 		report.Summary.SkippedScenarios++
 	}
 	report.Summary.SkippedMutations = len(mutations) - len(executableIndexes)
-	if len(mutations) == 0 {
+	running := 0
+	startedAt := time.Now()
+	var mu sync.Mutex
+	status := startStatusReporting(cfg, &mu, &report, &running, startedAt)
+	defer status.stop()
+
+	if len(executableIndexes) == 0 {
 		return report, nil
 	}
 
@@ -188,7 +208,6 @@ func Run(ctx context.Context, cfg Config, runner Runner) (Report, error) {
 
 	jobs := make(chan int)
 	var wg sync.WaitGroup
-	var mu sync.Mutex
 	var firstErr error
 
 	for worker := 0; worker < cfg.Workers; worker++ {
@@ -199,6 +218,9 @@ func Run(ctx context.Context, cfg Config, runner Runner) (Report, error) {
 				mutation := mutations[executableIndexes[resultIndex]]
 				mutationWorkDir := filepath.Join(cfg.WorkDir, "mutations", mutation.ID)
 				featureJSON := filepath.Join(mutationWorkDir, "feature.json")
+				mu.Lock()
+				running++
+				mu.Unlock()
 				if err := writeJSON(featureJSON, Apply(cfg.Feature, mutation)); err != nil {
 					mu.Lock()
 					if firstErr == nil {
@@ -206,6 +228,7 @@ func Run(ctx context.Context, cfg Config, runner Runner) (Report, error) {
 					}
 					report.Results[resultIndex] = makeResult(mutation, RunnerResult{Outcome: InfrastructureError, Error: err.Error()})
 					report.Summary.Errors++
+					running--
 					mu.Unlock()
 					continue
 				}
@@ -228,6 +251,7 @@ func Run(ctx context.Context, cfg Config, runner Runner) (Report, error) {
 				case Error:
 					report.Summary.Errors++
 				}
+				running--
 				mu.Unlock()
 			}
 		}()
@@ -246,6 +270,60 @@ func Run(ctx context.Context, cfg Config, runner Runner) (Report, error) {
 	wg.Wait()
 
 	return report, firstErr
+}
+
+type statusReporter struct {
+	done chan struct{}
+	stop func()
+}
+
+func startStatusReporting(cfg Config, mu *sync.Mutex, report *Report, running *int, startedAt time.Time) statusReporter {
+	if cfg.Status == nil || cfg.StatusInterval <= 0 {
+		return statusReporter{stop: func() {}}
+	}
+
+	done := make(chan struct{})
+	emit := func() {
+		cfg.Status(snapshotStatus(mu, report, running, startedAt))
+	}
+	emit()
+	go func() {
+		ticker := time.NewTicker(cfg.StatusInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				emit()
+			case <-done:
+				return
+			}
+		}
+	}()
+
+	return statusReporter{
+		done: done,
+		stop: func() {
+			close(done)
+			emit()
+		},
+	}
+}
+
+func snapshotStatus(mu *sync.Mutex, report *Report, running *int, startedAt time.Time) StatusSnapshot {
+	mu.Lock()
+	defer mu.Unlock()
+	completed := report.Summary.Killed + report.Summary.Survived + report.Summary.Errors
+	return StatusSnapshot{
+		Elapsed:          time.Since(startedAt),
+		Total:            report.Summary.Total,
+		Completed:        completed,
+		Running:          *running,
+		Killed:           report.Summary.Killed,
+		Survived:         report.Summary.Survived,
+		Errors:           report.Summary.Errors,
+		SkippedScenarios: report.Summary.SkippedScenarios,
+		SkippedMutations: report.Summary.SkippedMutations,
+	}
 }
 
 func acceptedSkips(cfg Config, mutations []Mutation) map[int]bool {

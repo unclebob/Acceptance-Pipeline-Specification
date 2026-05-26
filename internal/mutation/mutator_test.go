@@ -2,7 +2,9 @@ package mutation
 
 import (
 	"context"
+	"sync"
 	"testing"
+	"time"
 
 	"acceptance-pipeline-specification/internal/gherkin"
 )
@@ -98,6 +100,73 @@ func TestRunClassifiesRunnerOutcomes(t *testing.T) {
 	}
 }
 
+func TestRunEmitsPeriodicStatusWhileMutationsAreRunning(t *testing.T) {
+	feature := gherkin.Feature{
+		Name: "F",
+		Scenarios: []gherkin.Scenario{{
+			Name:     "S",
+			Steps:    []gherkin.Step{{Keyword: "Then", Text: "x is <x>", Parameters: []string{"x"}}},
+			Examples: []map[string]string{{"x": "1"}},
+		}},
+	}
+
+	var mu sync.Mutex
+	var snapshots []StatusSnapshot
+	runnerStarted := make(chan struct{})
+	releaseRunner := make(chan struct{})
+	runner := RunnerFunc(func(ctx context.Context, job Job) RunnerResult {
+		close(runnerStarted)
+		select {
+		case <-releaseRunner:
+		case <-ctx.Done():
+			return RunnerResult{Outcome: InfrastructureError, Error: ctx.Err().Error()}
+		}
+		return RunnerResult{Outcome: TestFailure}
+	})
+
+	done := make(chan struct{})
+	var report Report
+	var err error
+	go func() {
+		defer close(done)
+		report, err = Run(context.Background(), Config{
+			Feature:        feature,
+			WorkDir:        t.TempDir(),
+			Workers:        1,
+			StatusInterval: 5 * time.Millisecond,
+			Status: func(snapshot StatusSnapshot) {
+				mu.Lock()
+				defer mu.Unlock()
+				snapshots = append(snapshots, snapshot)
+			},
+		}, runner)
+	}()
+
+	select {
+	case <-runnerStarted:
+	case <-time.After(time.Second):
+		t.Fatal("runner did not start")
+	}
+	waitForStatus(t, &mu, &snapshots, func(snapshot StatusSnapshot) bool {
+		return snapshot.Running == 1 && snapshot.Completed == 0
+	})
+	close(releaseRunner)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("run did not finish")
+	}
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if report.Summary.Killed != 1 {
+		t.Fatalf("summary = %#v", report.Summary)
+	}
+	waitForStatus(t, &mu, &snapshots, func(snapshot StatusSnapshot) bool {
+		return snapshot.Running == 0 && snapshot.Completed == 1 && snapshot.Killed == 1
+	})
+}
+
 func assertMutation(t *testing.T, mutation Mutation, id, path, original string) {
 	t.Helper()
 	if mutation.ID != id || mutation.Path != path || mutation.Original != original {
@@ -106,4 +175,23 @@ func assertMutation(t *testing.T, mutation Mutation, id, path, original string) 
 	if mutation.Mutated == original {
 		t.Fatalf("mutated value equals original for %#v", mutation)
 	}
+}
+
+func waitForStatus(t *testing.T, mu *sync.Mutex, snapshots *[]StatusSnapshot, matches func(StatusSnapshot) bool) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		for _, snapshot := range *snapshots {
+			if matches(snapshot) {
+				mu.Unlock()
+				return
+			}
+		}
+		mu.Unlock()
+		time.Sleep(time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	t.Fatalf("status snapshot not found in %#v", *snapshots)
 }
