@@ -109,6 +109,37 @@ acceptance/generated/
 The exact project test command, generated test extension, runtime, handlers, and
 adapter are project-specific.
 
+## Gherkin IR DRY Checker
+
+APS includes `gherkin-ir-dry-checker`, a report-only tool that analyzes
+parser-produced JSON IR for duplicated or similar step text.
+
+Build or install it with the other APS tools, then run it after
+`gherkin-parser` and before generating or running acceptance tests:
+
+```sh
+gherkin-parser features/example.feature build/acceptance/ir/example.json
+gherkin-ir-dry-checker build/acceptance/ir/example.json build/acceptance/dry/example.json
+```
+
+The checker does not rewrite feature files, IR, generated tests, runtimes, or
+step handlers. It produces an advisory JSON report. Use that report to reduce
+duplication in project-owned acceptance code, especially repeated literal
+step-handler arms that can be replaced with one parameterized or regex-based
+handler.
+
+Typical workflow:
+
+1. Parse each `.feature` file into JSON IR with `gherkin-parser`.
+2. Run `gherkin-ir-dry-checker` on each IR file.
+3. Review findings such as `exact-duplicate`, `placeholder-variant`,
+   `near-duplicate`, and `possible-synonym`.
+4. Consolidate project step handlers where the meanings are truly the same.
+5. Regenerate and run the acceptance tests.
+
+Do not blindly merge steps only because they look similar. Some step texts have
+the same shape but different setup or assertion semantics.
+
 ## Typical Installation Flow
 
 When installing the pipeline in a project, an agent usually:
