@@ -26,6 +26,7 @@ Normal acceptance run:
 feature file
   -> gherkin parser
   -> JSON IR
+  -> optional IR-DRY checker
   -> acceptance entrypoint generator
   -> generated test entry points
   -> project test runner
@@ -54,7 +55,9 @@ Portable tools in this repository:
 1. `gherkin-parser`: reads the supported Gherkin subset and writes JSON IR.
 2. JSON IR reader/writer support: loads and stores the canonical feature
    representation.
-3. `gherkin-mutator`: builds deterministic example-value mutations, runs them
+3. `gherkin-ir-dry-checker`: reads one JSON IR file and reports duplicate,
+   near-duplicate, and possible-synonym step text for agent review.
+4. `gherkin-mutator`: builds deterministic example-value mutations, runs them
    through a persistent runner worker, and reports killed, survived, and error
    results.
 
@@ -74,10 +77,12 @@ Read the specs in this order:
 
 1. [parser-spec.md](parser-spec.md): supported Gherkin syntax, parser behavior,
    and canonical JSON IR.
-2. [acceptance-generator.md](acceptance-generator.md): entrypoint generator
+2. [ir-dry-checker-spec.md](ir-dry-checker-spec.md): report-only duplicate,
+   near-duplicate, and possible-synonym step analysis for one JSON IR file.
+3. [acceptance-generator.md](acceptance-generator.md): entrypoint generator
    command, generated test requirements, runtime contract, step handler
    contract, generated metadata, and implementation hash rules.
-3. [mutator-spec.md](mutator-spec.md): mutator command, mutation rules,
+4. [mutator-spec.md](mutator-spec.md): mutator command, mutation rules,
    persistent runner-worker protocol, differential manifests, status reporting,
    result classification, and report formats.
 
@@ -87,6 +92,7 @@ A conforming setup exposes these command shapes:
 
 ```text
 gherkin-parser <feature-file> <json-output>
+gherkin-ir-dry-checker <json-ir> <report-output>
 acceptance-entrypoint-generator <json-ir> <generated-test-output>
 gherkin-mutator [options]
 ```
@@ -109,15 +115,17 @@ When installing the pipeline in a project, an agent usually:
 
 1. Creates one or more feature files that exercise real project behavior.
 2. Parses each feature into JSON IR with `gherkin-parser`.
-3. Creates project-specific generated entry points from each IR.
-4. Implements the runtime and step handlers needed by those generated tests.
-5. Adds a normal acceptance script that parses, generates, and runs the
+3. Optionally runs `gherkin-ir-dry-checker` on each IR and uses the report to
+   simplify project step handlers.
+4. Creates project-specific generated entry points from each IR.
+5. Implements the runtime and step handlers needed by those generated tests.
+6. Adds a normal acceptance script that parses, generates, and runs the
    generated tests.
-6. Adds a runner adapter that can stay hot and accept mutation jobs over
+7. Adds a runner adapter that can stay hot and accept mutation jobs over
    stdin/stdout.
-7. Runs `gherkin-mutator` and improves scenarios or handlers until important
+8. Runs `gherkin-mutator` and improves scenarios or handlers until important
    mutations are killed.
-8. Adds parser, generator, runtime, handler, adapter, and mutator coverage at
+9. Adds parser, generator, runtime, handler, adapter, and mutator coverage at
    the project-appropriate level.
 
 Normal acceptance should be part of regular verification. Acceptance mutation is
