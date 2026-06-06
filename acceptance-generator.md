@@ -118,7 +118,28 @@ Handler requirements:
 6. Unsupported step text must fail the current test.
 
 A project may add regex or expression matching, but exact text matching is the
-portable baseline.
+portable baseline. Projects are advised to support regex or expression matching
+that can extract placeholder names from the matched step text, so a handler can
+read the captured example key from the current example object.
+
+For example, these step texts:
+
+```text
+the player is in room <player_room>
+the player is in room <transport_room>
+```
+
+may be handled by a single project-specific pattern equivalent to:
+
+```text
+^the player is in room <([A-Za-z0-9_]+)>$
+```
+
+The handler receives the captured placeholder name, such as `player_room` or
+`transport_room`, and fetches that key from the example values. Regex or
+expression matching must still fail ambiguous or unsupported step text, and
+projects should keep patterns narrow enough that unrelated steps do not match
+the same handler.
 
 ## Generator Metadata
 
