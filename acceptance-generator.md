@@ -82,10 +82,15 @@ For scenarios without examples, use `example_1` or another stable name.
 
 ## Step Handler Contract
 
-Step handlers are the project-specific adapter layer. They connect exact Gherkin
-step text to project behavior.
+Step handlers are the project-specific adapter layer. They connect Gherkin step
+text to project behavior.
 
-The portable baseline matches handlers by exact `text` value, not by keyword:
+Recommended project runtimes use regex or expression matching that extracts
+placeholder names from the matched step text. The handler then uses each
+captured placeholder name as the key into the current example object.
+
+The portable minimum remains exact `text` matching, not keyword matching, so a
+minimal conforming runtime can match this step text directly:
 
 ```text
 "the result is <result>"
@@ -117,10 +122,10 @@ Handler requirements:
    test.
 6. Unsupported step text must fail the current test.
 
-A project may add regex or expression matching, but exact text matching is the
-portable baseline. Projects are advised to support regex or expression matching
-that can extract placeholder names from the matched step text, so a handler can
-read the captured example key from the current example object.
+For normal project use, regex or expression matching with placeholder-name
+capture should be the default style for step handlers. This lets one handler
+support a consistent Gherkin vocabulary while still preserving meaningful
+example parameter names.
 
 For example, these step texts:
 

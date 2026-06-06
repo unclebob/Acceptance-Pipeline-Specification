@@ -101,8 +101,8 @@ the player is in room <_1>
 
 This is a high-confidence sign of possible feature-wording drift. Prefer
 normalizing the Gherkin source when the different placeholder names do not add
-meaning for the reader. If the different names do add meaning, project
-runtimes are advised to use regex or expression matching that captures the
+meaning for the reader. If the different names do add meaning, the recommended
+project runtime default is regex or expression matching that captures the
 placeholder name and reads that key from the current example object, as
 specified in [acceptance-generator.md](acceptance-generator.md).
 
