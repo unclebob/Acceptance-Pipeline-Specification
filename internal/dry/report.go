@@ -25,6 +25,10 @@ type Summary struct {
 	Findings        int `json:"findings"`
 }
 
+type Options struct {
+	IncludeExact bool
+}
+
 type Finding struct {
 	Kind               string   `json:"kind"`
 	Confidence         string   `json:"confidence"`
@@ -61,10 +65,17 @@ var parameterPattern = regexp.MustCompile(`<([A-Za-z0-9_]+)>`)
 var nonTokenPattern = regexp.MustCompile(`[^a-z0-9]+`)
 
 func Analyze(feature gherkin.Feature) Report {
+	return AnalyzeWithOptions(feature, Options{})
+}
+
+func AnalyzeWithOptions(feature gherkin.Feature, options Options) Report {
 	entries := collectSteps(feature)
 	byText := membersByText(entries)
 	findings := []Finding{}
-	findings = append(findings, exactDuplicateFindings(byText)...)
+	findings = append(findings, duplicateInScenarioFindings(entries)...)
+	if options.IncludeExact {
+		findings = append(findings, exactDuplicateFindings(byText)...)
+	}
 	findings = append(findings, placeholderVariantFindings(entries, byText)...)
 	findings = append(findings, similarityFindings(byText)...)
 	sortFindings(findings)
@@ -145,7 +156,35 @@ func exactDuplicateFindings(byText map[string]Member) []Finding {
 			PatternCandidate:   exactPattern(member.Text),
 			Members:            []Member{member},
 			Reason:             "same step text appears more than once in the IR",
-			SuggestedAction:    "Keep one handler for this exact step text; repeated use in scenarios is expected, but repeated handler arms are unnecessary.",
+			SuggestedAction:    "Treat this as a vocabulary reuse audit; repeated use across scenarios is usually acceptable.",
+		})
+	}
+	return findings
+}
+
+func duplicateInScenarioFindings(entries []stepEntry) []Finding {
+	groups := map[string]Member{}
+	for _, entry := range entries {
+		key := scenarioDuplicateKey(entry)
+		member := groups[key]
+		member.Text = entry.text
+		member.Locations = append(member.Locations, entry.location)
+		groups[key] = member
+	}
+
+	var findings []Finding
+	for _, member := range groups {
+		if len(member.Locations) < 2 {
+			continue
+		}
+		findings = append(findings, Finding{
+			Kind:               "duplicate-in-scenario",
+			Confidence:         "high",
+			CanonicalCandidate: member.Text,
+			PatternCandidate:   exactPattern(member.Text),
+			Members:            []Member{member},
+			Reason:             "same step text appears more than once in the same background or scenario",
+			SuggestedAction:    "Review the scenario for an accidental repeated step; keep it only if the repeated execution is intentional.",
 		})
 	}
 	return findings
@@ -176,7 +215,7 @@ func placeholderVariantFindings(entries []stepEntry, byText map[string]Member) [
 			PatternCandidate:   regexFromNormalized(normalized),
 			Members:            members,
 			Reason:             "step text is identical after replacing placeholder names with generic slots",
-			SuggestedAction:    "Consider one regex or expression handler that captures the placeholder name and reads that example column.",
+			SuggestedAction:    "Review the feature wording and normalize the Gherkin if the different placeholder names do not add meaning.",
 		})
 	}
 	return findings
@@ -219,7 +258,7 @@ func similarityFindings(byText map[string]Member) []Finding {
 				Confidence:      confidence,
 				Members:         members,
 				Reason:          reason,
-				SuggestedAction: "Review manually before combining; if the behavior is the same, replace the variants with one narrower regex handler.",
+				SuggestedAction: "Review manually before editing; normalize the Gherkin only when the different wording is accidental drift.",
 				Score:           round(score),
 			})
 		}
@@ -344,14 +383,16 @@ func sortFindings(findings []Finding) {
 
 func kindRank(kind string) int {
 	switch kind {
-	case "exact-duplicate":
+	case "duplicate-in-scenario":
 		return 0
-	case "placeholder-variant":
+	case "exact-duplicate":
 		return 1
-	case "near-duplicate":
+	case "placeholder-variant":
 		return 2
-	default:
+	case "near-duplicate":
 		return 3
+	default:
+		return 4
 	}
 }
 
@@ -365,6 +406,17 @@ func findingSortText(finding Finding) string {
 func findingKey(kind string, texts []string) string {
 	sort.Strings(texts)
 	return kind + "\x00" + strings.Join(texts, "\x00")
+}
+
+func scenarioDuplicateKey(entry stepEntry) string {
+	if entry.location.Section == "background" {
+		return "background\x00" + entry.text
+	}
+	scenarioIndex := -1
+	if entry.location.ScenarioIndex != nil {
+		scenarioIndex = *entry.location.ScenarioIndex
+	}
+	return fmt.Sprintf("scenario\x00%d\x00%s", scenarioIndex, entry.text)
 }
 
 func round(value float64) float64 {

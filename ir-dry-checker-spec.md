@@ -3,20 +3,20 @@
 ## Purpose
 
 This document specifies `gherkin-ir-dry-checker`, the portable report-only
-command that reads one parser-produced JSON IR file and reports duplicated,
+command that reads one parser-produced JSON IR file and reports repeated,
 near-duplicated, and possible-synonym step text.
 
 The checker does not rewrite the JSON IR, generated entry points, runtime, or
-project step handlers. Its output is advisory. Agents or developers decide
-whether any reported finding should be reduced with regex or expression-based
-step handlers.
+project implementation files. Its output is advisory. Agents or developers
+decide whether any reported finding should be addressed by normalizing or
+pruning Gherkin in the source feature file.
 
 The parser and JSON IR are specified in [parser-spec.md](parser-spec.md).
 
 ## Command
 
 ```text
-gherkin-ir-dry-checker <json-ir> <report-output>
+gherkin-ir-dry-checker [--include-exact] <json-ir> <report-output>
 ```
 
 The command accepts exactly two positional arguments:
@@ -32,37 +32,54 @@ Exit codes:
 2  wrong command usage
 ```
 
+Options:
+
+```text
+--include-exact
+    Include ordinary exact duplicate step text across the whole IR. By default,
+    the checker reports only exact repeats within one background or scenario.
+```
+
 ## Scope
 
 The checker analyzes exactly one JSON IR file per invocation.
 
 It must not read other feature files, source files, generated entry points,
-runtime files, or project step handlers.
+runtime files, or project implementation files.
 
 The checker reports findings across background and scenario steps represented
 by the supplied IR. Step keywords are retained in finding locations but are not
-part of step-text equivalence because the portable step handler baseline
-matches handlers by exact `text` value, not by keyword.
+part of step-text equivalence.
 
 ## Finding Categories
 
 The checker may report these finding kinds:
 
 ```text
+duplicate-in-scenario
 exact-duplicate
 placeholder-variant
 near-duplicate
 possible-synonym
 ```
 
+### Duplicate In Scenario
+
+A `duplicate-in-scenario` finding means the same step `text` appears more than
+once in the same background or scenario.
+
+This is the default exact-repeat finding because repeated identical steps
+inside one execution are more likely to be accidental than repeated use of a
+common step across several scenarios.
+
 ### Exact Duplicate
 
 An `exact-duplicate` finding means the same step `text` appears more than once
-in the IR.
+in the IR. These findings are emitted only when `--include-exact` is supplied.
 
 Repeated use of a step across scenarios is often normal. The finding exists to
-help agents notice when repeated scenario language might correspond to repeated
-handler arms in a project step file.
+help agents audit vocabulary reuse across the IR when `--include-exact` is
+explicitly requested.
 
 ### Placeholder Variant
 
@@ -82,8 +99,9 @@ Both normalize to:
 the player is in room <_1>
 ```
 
-This is a high-confidence candidate for a single regex or expression handler
-that captures the placeholder name and reads that example column.
+This is a high-confidence sign of possible feature-wording drift. Prefer
+normalizing the Gherkin source when the different placeholder names do not add
+meaning for the reader.
 
 ### Near Duplicate
 
@@ -100,7 +118,7 @@ similarity after placeholder normalization.
 
 Possible-synonym findings are review prompts. They are expected to include
 false positives and must be inspected by an agent or developer before any step
-handler is changed.
+text is changed.
 
 ## Portable Similarity Rules
 
@@ -170,7 +188,7 @@ Each finding object includes:
     }
   ],
   "reason": "step text is identical after replacing placeholder names with generic slots",
-  "suggested_action": "Consider one regex or expression handler that captures the placeholder name and reads that example column."
+  "suggested_action": "Review the feature wording and normalize the Gherkin if the different forms do not add meaning."
 }
 ```
 
@@ -183,9 +201,10 @@ The checker must not:
 1. Rewrite feature files.
 2. Rewrite JSON IR.
 3. Rewrite generated entry points.
-4. Rewrite step handlers.
+4. Rewrite project implementation files.
 5. Require knowledge of a project implementation language.
 6. Treat possible synonyms as semantically equivalent without review.
+7. Recommend implementation changes as a substitute for clear feature wording.
 
 ## Conformance Checklist
 
@@ -195,9 +214,12 @@ The checker must not:
 4. The command writes a JSON report.
 5. The report uses `schema_version`.
 6. The report includes step occurrence, unique step, and finding counts.
-7. The report identifies exact duplicate step text.
-8. The report identifies placeholder variants.
-9. Similarity-based findings are advisory and include confidence.
-10. Finding locations identify background or scenario step positions.
-11. The command does not modify input IR, feature files, generated files, or
-    step handlers.
+7. The default report identifies duplicate step text within one background or
+   scenario.
+8. With `--include-exact`, the report identifies exact duplicate step text
+   across the IR.
+9. The report identifies placeholder variants.
+10. Similarity-based findings are advisory and include confidence.
+11. Finding locations identify background or scenario step positions.
+12. The command does not modify input IR, feature files, generated files, or
+    project implementation files.

@@ -40,7 +40,7 @@ func TestAnalyzeReportsPlaceholderVariants(t *testing.T) {
 	}
 }
 
-func TestAnalyzeReportsExactDuplicateOccurrences(t *testing.T) {
+func TestAnalyzeDoesNotReportCrossScenarioExactDuplicatesByDefault(t *testing.T) {
 	feature := gherkin.Feature{
 		Name: "Messages",
 		Background: []gherkin.Step{
@@ -57,11 +57,64 @@ func TestAnalyzeReportsExactDuplicateOccurrences(t *testing.T) {
 	report := Analyze(feature)
 
 	finding := findKind(report, "exact-duplicate")
+	if finding != nil {
+		t.Fatalf("exact-duplicate finding should be omitted by default: %#v", report.Findings)
+	}
+}
+
+func TestAnalyzeReportsExactDuplicateOccurrencesWhenIncluded(t *testing.T) {
+	feature := gherkin.Feature{
+		Name: "Messages",
+		Background: []gherkin.Step{
+			{Keyword: "Given", Text: "the player hears message <message>", Parameters: []string{"message"}},
+		},
+		Scenarios: []gherkin.Scenario{{
+			Name: "pit",
+			Steps: []gherkin.Step{
+				{Keyword: "Then", Text: "the player hears message <message>", Parameters: []string{"message"}},
+			},
+		}},
+	}
+
+	report := AnalyzeWithOptions(feature, Options{IncludeExact: true})
+
+	finding := findKind(report, "exact-duplicate")
 	if finding == nil {
 		t.Fatalf("exact-duplicate finding not found in %#v", report.Findings)
 	}
 	if len(finding.Members) != 1 || len(finding.Members[0].Locations) != 2 {
 		t.Fatalf("members = %#v", finding.Members)
+	}
+}
+
+func TestAnalyzeReportsDuplicateStepsWithinScenarioByDefault(t *testing.T) {
+	feature := gherkin.Feature{
+		Name: "Messages",
+		Scenarios: []gherkin.Scenario{{
+			Name: "pit",
+			Steps: []gherkin.Step{
+				{Keyword: "Then", Text: "the game is lost"},
+				{Keyword: "And", Text: "the game is lost"},
+			},
+		}, {
+			Name: "bat",
+			Steps: []gherkin.Step{
+				{Keyword: "Then", Text: "the game is lost"},
+			},
+		}},
+	}
+
+	report := Analyze(feature)
+
+	finding := findKind(report, "duplicate-in-scenario")
+	if finding == nil {
+		t.Fatalf("duplicate-in-scenario finding not found in %#v", report.Findings)
+	}
+	if len(finding.Members) != 1 || len(finding.Members[0].Locations) != 2 {
+		t.Fatalf("members = %#v", finding.Members)
+	}
+	if got := *finding.Members[0].Locations[0].ScenarioIndex; got != 0 {
+		t.Fatalf("scenario index = %d", got)
 	}
 }
 

@@ -55,8 +55,9 @@ Portable tools in this repository:
 1. `gherkin-parser`: reads the supported Gherkin subset and writes JSON IR.
 2. JSON IR reader/writer support: loads and stores the canonical feature
    representation.
-3. `gherkin-ir-dry-checker`: reads one JSON IR file and reports duplicate,
-   near-duplicate, and possible-synonym step text for agent review.
+3. `gherkin-ir-dry-checker`: reads one JSON IR file and reports repeated,
+   near-duplicate, and possible-synonym step text so agents can normalize and
+   prune feature-file Gherkin.
 4. `gherkin-mutator`: builds deterministic example-value mutations, runs them
    through a persistent runner worker, and reports killed, survived, and error
    results.
@@ -77,8 +78,9 @@ Read the specs in this order:
 
 1. [parser-spec.md](parser-spec.md): supported Gherkin syntax, parser behavior,
    and canonical JSON IR.
-2. [ir-dry-checker-spec.md](ir-dry-checker-spec.md): report-only duplicate,
-   near-duplicate, and possible-synonym step analysis for one JSON IR file.
+2. [ir-dry-checker-spec.md](ir-dry-checker-spec.md): report-only repeated,
+   near-duplicate, and possible-synonym step analysis used to normalize and
+   prune feature-file Gherkin.
 3. [acceptance-generator.md](acceptance-generator.md): entrypoint generator
    command, generated test requirements, runtime contract, step handler
    contract, generated metadata, and implementation hash rules.
@@ -92,7 +94,7 @@ A conforming setup exposes these command shapes:
 
 ```text
 gherkin-parser <feature-file> <json-output>
-gherkin-ir-dry-checker <json-ir> <report-output>
+gherkin-ir-dry-checker [--include-exact] <json-ir> <report-output>
 acceptance-entrypoint-generator <json-ir> <generated-test-output>
 gherkin-mutator [options]
 ```
@@ -112,10 +114,12 @@ adapter are project-specific.
 ## Gherkin IR DRY Checker
 
 APS includes `gherkin-ir-dry-checker`, a report-only tool that analyzes
-parser-produced JSON IR for duplicated or similar step text.
+parser-produced JSON IR for duplicated or similar step text. Its purpose is to
+help agents normalize and prune the Gherkin in feature files before generated
+tests are created.
 
-Build or install it with the other APS tools, then run it after
-`gherkin-parser` and before generating or running acceptance tests:
+Build or install it with the other APS tools, then run it after parsing newly
+written or changed feature files and before generating acceptance tests:
 
 ```sh
 gherkin-parser features/example.feature build/acceptance/ir/example.json
@@ -123,19 +127,19 @@ gherkin-ir-dry-checker build/acceptance/ir/example.json build/acceptance/dry/exa
 ```
 
 The checker does not rewrite feature files, IR, generated tests, runtimes, or
-step handlers. It produces an advisory JSON report. Use that report to reduce
-duplication in project-owned acceptance code, especially repeated literal
-step-handler arms that can be replaced with one parameterized or regex-based
-handler.
+project implementation files. It produces an advisory JSON report. Use that
+report to edit feature files when the same idea is expressed unnecessarily in
+different ways or when repeated steps inside one scenario should be pruned.
 
 Typical workflow:
 
 1. Parse each `.feature` file into JSON IR with `gherkin-parser`.
 2. Run `gherkin-ir-dry-checker` on each IR file.
-3. Review findings such as `exact-duplicate`, `placeholder-variant`,
+3. Review findings such as `duplicate-in-scenario`, `placeholder-variant`,
    `near-duplicate`, and `possible-synonym`.
-4. Consolidate project step handlers where the meanings are truly the same.
-5. Regenerate and run the acceptance tests.
+4. Normalize Gherkin wording where the different forms are accidental drift.
+5. Prune accidental repeated steps inside a background or scenario.
+6. Parse, check, generate, and run the acceptance tests.
 
 Do not blindly merge steps only because they look similar. Some step texts have
 the same shape but different setup or assertion semantics.
@@ -147,7 +151,7 @@ When installing the pipeline in a project, an agent usually:
 1. Creates one or more feature files that exercise real project behavior.
 2. Parses each feature into JSON IR with `gherkin-parser`.
 3. Optionally runs `gherkin-ir-dry-checker` on each IR and uses the report to
-   simplify project step handlers.
+   normalize and prune feature-file Gherkin.
 4. Creates project-specific generated entry points from each IR.
 5. Implements the runtime and step handlers needed by those generated tests.
 6. Adds a normal acceptance script that parses, generates, and runs the

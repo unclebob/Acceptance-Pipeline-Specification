@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 
@@ -14,12 +15,19 @@ func main() {
 }
 
 func run() int {
-	if len(os.Args) != 3 {
-		fmt.Fprintln(os.Stderr, "usage: gherkin-ir-dry-checker <json-ir> <report-output>")
+	var includeExact bool
+	flags := flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	flags.BoolVar(&includeExact, "include-exact", false, "include ordinary exact duplicate step text across scenarios")
+	if err := flags.Parse(os.Args[1:]); err != nil {
+		return 2
+	}
+	if flags.NArg() != 2 {
+		fmt.Fprintln(os.Stderr, "usage: gherkin-ir-dry-checker [--include-exact] <json-ir> <report-output>")
 		return 2
 	}
 
-	input, err := os.Open(os.Args[1])
+	input, err := os.Open(flags.Arg(0))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -32,14 +40,15 @@ func run() int {
 		return 1
 	}
 
-	output, err := os.Create(os.Args[2])
+	output, err := os.Create(flags.Arg(1))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	defer output.Close()
 
-	if err := dry.WriteJSON(output, dry.Analyze(feature)); err != nil {
+	report := dry.AnalyzeWithOptions(feature, dry.Options{IncludeExact: includeExact})
+	if err := dry.WriteJSON(output, report); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
