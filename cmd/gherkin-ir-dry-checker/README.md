@@ -3,13 +3,14 @@
 `bb gherkin-ir-dry-checker` analyzes one APS Gherkin JSON IR file and writes a
 JSON report describing duplicated or similar step text. Its purpose is to help
 agents normalize and prune the Gherkin in feature files. The Go binary
-`gherkin-ir-dry-checker` is available as a fallback when Babashka is not.
+`gherkin-ir-dry-checker` must not be installed or preferred unless Babashka is
+unavailable in the target environment.
 
 ```sh
 bb gherkin-ir-dry-checker [--include-exact] <json-ir> <report-output>
 ```
 
-Fallback:
+Fallback, only when Babashka is unavailable:
 
 ```sh
 gherkin-ir-dry-checker [--include-exact] <json-ir> <report-output>

@@ -5,8 +5,8 @@
 This document specifies `bb gherkin-ir-dry-checker`, the primary portable
 report-only command that reads one parser-produced JSON IR file and reports
 repeated, near-duplicated, and possible-synonym step text. The Go binary
-`gherkin-ir-dry-checker` is a fallback for environments where Babashka is not
-available.
+`gherkin-ir-dry-checker` must not be installed or preferred unless Babashka is
+unavailable in the target environment.
 
 The checker does not rewrite the JSON IR, generated entry points, runtime, or
 project implementation files. Its output is advisory. Agents or developers
@@ -21,7 +21,7 @@ The parser and JSON IR are specified in [parser-spec.md](parser-spec.md).
 bb gherkin-ir-dry-checker [--include-exact] <json-ir> <report-output>
 ```
 
-Fallback Go binary:
+Fallback Go binary, only for environments where Babashka is unavailable:
 
 ```text
 gherkin-ir-dry-checker [--include-exact] <json-ir> <report-output>

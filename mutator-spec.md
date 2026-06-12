@@ -5,8 +5,8 @@
 This document specifies `bb gherkin-mutator`, the primary portable command
 that mutates Gherkin example values in the parser-defined JSON IR and runs
 acceptance test entry points to determine whether those tests detect the
-changed specification data. The Go binary `gherkin-mutator` is a fallback for
-environments where Babashka is not available.
+changed specification data. The Go binary `gherkin-mutator` must not be
+installed or preferred unless Babashka is unavailable in the target environment.
 
 Acceptance mutation means mutating specification-derived example data. It does
 not mean mutation testing application source code.
@@ -51,7 +51,7 @@ override the metadata value for debugging or unusual project layouts.
 bb gherkin-mutator [options]
 ```
 
-Fallback Go binary:
+Fallback Go binary, only for environments where Babashka is unavailable:
 
 ```text
 gherkin-mutator [options]

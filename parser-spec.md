@@ -5,8 +5,8 @@
 This document specifies `bb gherkin-parser`, the primary portable command that
 converts a small deterministic Gherkin subset into the JSON intermediate
 representation used by the acceptance generator, runtime, and mutator. The Go
-binary `gherkin-parser` is a fallback for environments where Babashka is not
-available.
+binary `gherkin-parser` must not be installed or preferred unless Babashka is
+unavailable in the target environment.
 
 ## Parser Command
 
@@ -16,7 +16,7 @@ The primary parser task accepts exactly two positional arguments:
 bb gherkin-parser <feature-file> <json-output>
 ```
 
-Fallback Go binary:
+Fallback Go binary, only for environments where Babashka is unavailable:
 
 ```text
 gherkin-parser <feature-file> <json-output>

@@ -8,7 +8,9 @@ generates executable acceptance test entry points, runs those tests, and uses
 acceptance mutation to check whether example data is actually connected to the
 application under test.
 
-Some pipeline tools are pre-supplied Go commands from this repository. Other
+Some pipeline tools are pre-supplied Babashka tasks from this repository. Agents
+should use the `bb ...` commands by default. The equivalent Go commands are
+fallbacks only for target environments where Babashka is not available. Other
 components are project-dependent and are written by the agents responsible for
 installing and maintaining acceptance testing in the target project.
 
@@ -68,8 +70,8 @@ bb gherkin-ir-dry-checker [--include-exact] <json-ir> <report-output>
 bb gherkin-mutator --runner-worker "<command>" [options]
 ```
 
-Go command binaries with the same names are maintained as fallbacks for
-environments where Babashka is not available.
+Go command binaries with the same names are maintained only as fallbacks. Do not
+install or prefer them when the target environment can run Babashka.
 
 Project-specific components created by agents as needed:
 
@@ -108,7 +110,7 @@ acceptance-entrypoint-generator <json-ir> <generated-test-output>
 bb gherkin-mutator [options]
 ```
 
-If Babashka is unavailable, use the fallback Go binaries:
+Only if Babashka is unavailable, use the fallback Go binaries:
 
 ```text
 gherkin-parser <feature-file> <json-output>
