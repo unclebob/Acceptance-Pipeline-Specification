@@ -22,86 +22,95 @@
        (#(str/split % #"\|"))
        (mapv str/trim)))
 
+(def line-classifiers
+  [[:skip #(or (str/blank? %) (str/starts-with? % "#"))]
+   [:feature #(str/starts-with? % "Feature:")]
+   [:background #(= % "Background:")]
+   [:scenario-outline #(str/starts-with? % "Scenario Outline:")]
+   [:scenario #(str/starts-with? % "Scenario:")]
+   [:examples #(= % "Examples:")]
+   [:table #(str/starts-with? % "|")]
+   [:step step?]])
+
+(defn- classify-line [line]
+  (or (some (fn [[kind matches?]] (when (matches? line) kind)) line-classifiers)
+      :ignored))
+
+(defn- scenario [prefix line]
+  (array-map :name (str/trim (subs line (count prefix)))
+             :steps []
+             :examples []))
+
+(defn- add-scenario [state scenario]
+  (-> state
+      (update-in [:feature :scenarios] conj scenario)
+      (assoc :current (count (get-in state [:feature :scenarios]))
+             :section :scenario
+             :headers nil)))
+
+(defn- add-example-row [state cells line-no]
+  (let [{:keys [headers current]} state]
+    (when (not= (count cells) (count headers))
+      (throw (ex-info (format "line %d: example row has %d cells, header has %d"
+                              line-no (count cells) (count headers)) {})))
+    (update-in state [:feature :scenarios current :examples]
+               conj (into (array-map) (map vector headers cells)))))
+
+(defn- apply-table-line [state line line-no]
+  (if (or (not= (:section state) :examples) (nil? (:current state)))
+    state
+    (let [cells (parse-table-row line)]
+      (if (nil? (:headers state))
+        (assoc state :headers cells)
+        (add-example-row state cells line-no)))))
+
+(def step-handlers
+  {:background (fn [state step _]
+                 (update-in state [:feature :background] (fnil conj []) step))
+   :scenario (fn [state step _]
+               (-> state
+                   (update-in [:feature :scenarios (:current state) :steps] conj step)
+                   (assoc :section :scenario)))
+   :examples (fn [state step line-no]
+               ((:scenario step-handlers) state step line-no))})
+
+(defn- add-step [state step line-no]
+  (if-let [handler (step-handlers (:section state))]
+    (if (and (#{:scenario :examples} (:section state)) (nil? (:current state)))
+      (throw (ex-info (format "line %d: step outside scenario" line-no) {}))
+      (handler state step line-no))
+    (throw (ex-info (format "line %d: step outside background or scenario" line-no) {}))))
+
+(def line-handlers
+  {:skip (fn [state _ _] state)
+   :feature (fn [state line _] (assoc-in state [:feature :name] (str/trim (subs line (count "Feature:")))))
+   :background (fn [state _ _] (assoc state :current nil :section :background :headers nil))
+   :scenario-outline (fn [state line _] (add-scenario state (scenario "Scenario Outline:" line)))
+   :scenario (fn [state line _] (add-scenario state (scenario "Scenario:" line)))
+   :examples (fn [state _ line-no]
+               (if (nil? (:current state))
+                 (throw (ex-info (format "line %d: examples outside scenario" line-no) {}))
+                 (assoc state :section :examples :headers nil)))
+   :table apply-table-line
+   :step (fn [state line line-no] (add-step state (parse-step line) line-no))
+   :ignored (fn [state _ _] state)})
+
+(defn- apply-line [state line line-no]
+  ((line-handlers (classify-line line)) state line line-no))
+
 (defn parse-string [source]
-  (loop [lines (map-indexed vector (str/split-lines source))
-         feature (array-map :name "" :scenarios [])
-         current nil
-         section :none
-         headers nil]
-    (if-let [[line-index raw] (first lines)]
-      (let [line-no (inc line-index)
-            line (str/trim raw)]
-        (cond
-          (or (str/blank? line) (str/starts-with? line "#"))
-          (recur (rest lines) feature current section headers)
-
-          (str/starts-with? line "Feature:")
-          (recur (rest lines)
-                 (assoc feature :name (str/trim (subs line (count "Feature:"))))
-                 nil :none nil)
-
-          (= line "Background:")
-          (recur (rest lines) feature nil :background nil)
-
-          (str/starts-with? line "Scenario Outline:")
-          (let [scenario (array-map :name (str/trim (subs line (count "Scenario Outline:")))
-                                    :steps []
-                                    :examples [])
-                idx (count (:scenarios feature))]
-            (recur (rest lines)
-                   (update feature :scenarios conj scenario)
-                   idx :scenario nil))
-
-          (str/starts-with? line "Scenario:")
-          (let [scenario (array-map :name (str/trim (subs line (count "Scenario:")))
-                                    :steps []
-                                    :examples [])
-                idx (count (:scenarios feature))]
-            (recur (rest lines)
-                   (update feature :scenarios conj scenario)
-                   idx :scenario nil))
-
-          (= line "Examples:")
-          (if (nil? current)
-            (throw (ex-info (format "line %d: examples outside scenario" line-no) {}))
-            (recur (rest lines) feature current :examples nil))
-
-          (str/starts-with? line "|")
-          (if (or (not= section :examples) (nil? current))
-            (recur (rest lines) feature current section headers)
-            (let [cells (parse-table-row line)]
-              (if (nil? headers)
-                (recur (rest lines) feature current section cells)
-                (do
-                  (when (not= (count cells) (count headers))
-                    (throw (ex-info (format "line %d: example row has %d cells, header has %d"
-                                            line-no (count cells) (count headers)) {})))
-                  (recur (rest lines)
-                         (update-in feature [:scenarios current :examples]
-                                    conj (into (array-map) (map vector headers cells)))
-                         current section headers)))))
-
-          (step? line)
-          (let [step (parse-step line)]
-            (case section
-              :background
-              (recur (rest lines) (update feature :background (fnil conj []) step) current section headers)
-
-              (:scenario :examples)
-              (if (nil? current)
-                (throw (ex-info (format "line %d: step outside scenario" line-no) {}))
-                (recur (rest lines)
-                       (update-in feature [:scenarios current :steps] conj step)
-                       current :scenario headers))
-
-              (throw (ex-info (format "line %d: step outside background or scenario" line-no) {}))))
-
-          :else
-          (recur (rest lines) feature current section headers)))
-      (do
-        (when (str/blank? (:name feature))
-          (throw (ex-info "missing feature declaration" {})))
-        feature))))
+  (let [initial {:feature (array-map :name "" :scenarios [])
+                 :current nil
+                 :section :none
+                 :headers nil}
+        state (reduce (fn [state [index raw]]
+                        (apply-line state (str/trim raw) (inc index)))
+                      initial
+                      (map-indexed vector (str/split-lines source)))
+        feature (:feature state)]
+    (when (str/blank? (:name feature))
+      (throw (ex-info "missing feature declaration" {})))
+    feature))
 
 (defn parse-file [path]
   (parse-string (slurp path)))

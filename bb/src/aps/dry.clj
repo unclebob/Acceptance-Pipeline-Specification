@@ -8,17 +8,16 @@
 (def non-token-re #"[^a-z0-9]+")
 (def stop-words #{"a" "an" "and" "are" "is" "of" "the" "to" "with" "in" "has" "have"})
 
-(defn- normalize-placeholders [text]
+(defn- replace-placeholder-matches [text pattern replacement]
   (let [i (atom 0)]
-    (str/replace text parameter-re (fn [_] (str "<_" (swap! i inc) ">")))))
+    (str/replace text pattern (fn [_] (replacement (swap! i inc))))))
+
+(defn- normalize-placeholders [text]
+  (replace-placeholder-matches text parameter-re #(str "<_" % ">")))
 
 (defn- canonical-from-normalized [normalized]
-  (let [i (atom 0)]
-    (str/replace normalized #"<_[0-9]+>"
-                 (fn [_]
-                   (if (= 1 (swap! i inc))
-                     "<value>"
-                     (str "<value_" @i ">"))))))
+  (replace-placeholder-matches normalized #"<_[0-9]+>"
+                               #(if (= 1 %) "<value>" (str "<value_" % ">"))))
 
 (defn- regex-quote [s]
   (str/replace s #"([\\\.\+\*\?\(\)\|\[\]\{\}\^\$])" "\\\\$1"))
@@ -38,10 +37,11 @@
        set))
 
 (defn- location [section scenario-index scenario-name step-index keyword]
-  (cond-> (array-map :section section)
-    (some? scenario-index) (assoc :scenario_index scenario-index)
-    (seq scenario-name) (assoc :scenario_name scenario-name)
-    true (assoc :step_index step-index :keyword keyword)))
+  (assoc (cond-> (array-map :section section)
+           (some? scenario-index) (assoc :scenario_index scenario-index)
+           (seq scenario-name) (assoc :scenario_name scenario-name))
+         :step_index step-index
+         :keyword keyword))
 
 (defn- collect-steps [feature]
   (concat
@@ -141,38 +141,43 @@
       (long rounded)
       rounded)))
 
+(declare similarity-finding)
+
 (defn- similarity-findings [by-text]
   (let [texts (vec (sort (keys by-text)))]
-    (loop [pairs (for [i (range (count texts))
-                      j (range (inc i) (count texts))]
-                  [(texts i) (texts j)])
-           findings []]
-      (if-let [[left right] (first pairs)]
-        (let [left-norm (normalize-placeholders left)
-              right-norm (normalize-placeholders right)
-              score (jaccard (tokens left-norm) (tokens right-norm))]
-          (if (or (= left-norm right-norm) (< score 0.45))
-            (recur (rest pairs) findings)
-            (let [[kind reason] (if (>= score 0.72)
-                                  ["near-duplicate" "step texts are highly similar after placeholder normalization"]
-                                  ["possible-synonym" "step texts share many non-placeholder tokens and may describe the same concept"])]
-              (recur (rest pairs)
-                     (conj findings
-                           (array-map :kind kind
-                                      :confidence "medium"
-                                      :members (members-for-texts #{left right} by-text)
-                                      :reason reason
-                                      :suggested_action "Review manually before editing; normalize the Gherkin only when the different wording is accidental drift."
-                                      :score (round3 score)))))))
-        findings))))
+    (->> (for [i (range (count texts))
+               j (range (inc i) (count texts))]
+           [(texts i) (texts j)])
+         (keep #(similarity-finding by-text %))
+         vec)))
+
+(defn- similarity-kind [score]
+  (when (>= score 0.45)
+    (if (>= score 0.72)
+      ["near-duplicate" "step texts are highly similar after placeholder normalization"]
+      ["possible-synonym" "step texts share many non-placeholder tokens and may describe the same concept"])))
+
+(defn- similarity-finding [by-text [left right]]
+  (let [left-norm (normalize-placeholders left)
+        right-norm (normalize-placeholders right)
+        score (jaccard (tokens left-norm) (tokens right-norm))]
+    (when-not (= left-norm right-norm)
+      (when-let [[kind reason] (similarity-kind score)]
+        (array-map :kind kind
+                   :confidence "medium"
+                   :members (members-for-texts #{left right} by-text)
+                   :reason reason
+                   :suggested_action "Review manually before editing; normalize the Gherkin only when the different wording is accidental drift."
+                   :score (round3 score))))))
+
+(def kind-ranks
+  {"duplicate-in-scenario" 0
+   "exact-duplicate" 1
+   "placeholder-variant" 2
+   "near-duplicate" 3})
 
 (defn- kind-rank [kind]
-  (case kind
-    "duplicate-in-scenario" 0
-    "exact-duplicate" 1
-    "placeholder-variant" 2
-    "near-duplicate" 3
-    4))
+  (get kind-ranks kind 4))
 
 (defn- finding-sort-text [finding]
   (if (empty? (:members finding))
@@ -182,17 +187,11 @@
 (defn- sort-findings [findings]
   (->> findings
        (map-indexed vector)
-       (sort (fn [[left-index left] [right-index right]]
-               (let [left-key [(kind-rank (:kind left))
-                               (- (double (or (:score left) 0)))
-                               (finding-sort-text left)]
-                     right-key [(kind-rank (:kind right))
-                                (- (double (or (:score right) 0)))
-                                (finding-sort-text right)]
-                     compared (compare left-key right-key)]
-                 (if (zero? compared)
-                   (< left-index right-index)
-                   (neg? compared)))))
+       (sort-by (fn [[index finding]]
+                  [(kind-rank (:kind finding))
+                   (- (double (or (:score finding) 0)))
+                   (finding-sort-text finding)
+                   index]))
        (mapv second)))
 
 (defn analyze

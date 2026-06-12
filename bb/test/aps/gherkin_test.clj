@@ -1,5 +1,9 @@
 (ns aps.gherkin-test
-  (:require [aps.gherkin :as gherkin]
+  (:require [aps.cli-test-helper :as cli-helper]
+            [aps.cli.gherkin-parser :as parser-cli]
+            [aps.gherkin :as gherkin]
+            [cheshire.core :as json]
+            [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]))
 
 (def sample-feature
@@ -49,5 +53,18 @@ Examples:
                           (gherkin/parse-string "Feature: Bad\n\nExamples:\n  | x |\n  | y |\n"))))
   (testing "example row cell mismatch"
     (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                          #"example row has 1 cells, header has 2"
+                          #"line 6: example row has 1 cells, header has 2"
                           (gherkin/parse-string "Feature: Bad\nScenario Outline: mismatch\n  Given <x>\nExamples:\n  | x | y |\n  | 1 |\n")))))
+
+(deftest parser-cli-writes-json
+  (let [dir (.toFile (java.nio.file.Files/createTempDirectory "aps-parser-cli" (make-array java.nio.file.attribute.FileAttribute 0)))
+        input (io/file dir "sample.feature")
+        output (io/file dir "sample.json")]
+    (spit input sample-feature)
+    (parser-cli/-main (str input) (str output))
+    (is (= "Withdrawals" (:name (json/parse-string (slurp output) true))))))
+
+(deftest parser-cli-exits-nonzero-on-parse-error
+  (let [result (cli-helper/run-bb-task ["gherkin-parser" "missing.feature" "/tmp/out.json"])]
+    (is (= 1 (:exit result)))
+    (is (re-find #"No such file|missing.feature" (:output result)))))
