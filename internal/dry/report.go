@@ -400,7 +400,11 @@ func findingSortText(finding Finding) string {
 	if len(finding.Members) == 0 {
 		return finding.Kind
 	}
-	return finding.Members[0].Text
+	texts := make([]string, 0, len(finding.Members))
+	for _, member := range finding.Members {
+		texts = append(texts, member.Text)
+	}
+	return strings.Join(texts, "\x00")
 }
 
 func findingKey(kind string, texts []string) string {

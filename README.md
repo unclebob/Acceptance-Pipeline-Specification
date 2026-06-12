@@ -50,17 +50,26 @@ checks whether the acceptance tests fail when important example values change.
 
 ## Component Map
 
-Portable tools in this repository:
+Portable tools in this repository are primarily exposed as Babashka tasks:
 
-1. `gherkin-parser`: reads the supported Gherkin subset and writes JSON IR.
+1. `bb gherkin-parser`: reads the supported Gherkin subset and writes JSON IR.
 2. JSON IR reader/writer support: loads and stores the canonical feature
    representation.
-3. `gherkin-ir-dry-checker`: reads one JSON IR file and reports repeated,
+3. `bb gherkin-ir-dry-checker`: reads one JSON IR file and reports repeated,
    near-duplicate, and possible-synonym step text so agents can normalize and
    prune feature-file Gherkin.
-4. `gherkin-mutator`: builds deterministic example-value mutations, runs them
-   through a persistent runner worker, and reports killed, survived, and error
-   results.
+4. `bb gherkin-mutator`: builds deterministic example-value mutations, runs
+   them through a persistent runner worker, and reports killed, survived, and
+   error results.
+
+```sh
+bb gherkin-parser <feature-file> <json-output>
+bb gherkin-ir-dry-checker [--include-exact] <json-ir> <report-output>
+bb gherkin-mutator --runner-worker "<command>" [options]
+```
+
+Go command binaries with the same names are maintained as fallbacks for
+environments where Babashka is not available.
 
 Project-specific components created by agents as needed:
 
@@ -90,12 +99,20 @@ Read the specs in this order:
 
 ## Command Entry Points
 
-A conforming setup exposes these command shapes:
+A conforming setup should prefer these Babashka command shapes:
+
+```text
+bb gherkin-parser <feature-file> <json-output>
+bb gherkin-ir-dry-checker [--include-exact] <json-ir> <report-output>
+acceptance-entrypoint-generator <json-ir> <generated-test-output>
+bb gherkin-mutator [options]
+```
+
+If Babashka is unavailable, use the fallback Go binaries:
 
 ```text
 gherkin-parser <feature-file> <json-output>
 gherkin-ir-dry-checker [--include-exact] <json-ir> <report-output>
-acceptance-entrypoint-generator <json-ir> <generated-test-output>
 gherkin-mutator [options]
 ```
 
@@ -113,17 +130,17 @@ adapter are project-specific.
 
 ## Gherkin IR DRY Checker
 
-APS includes `gherkin-ir-dry-checker`, a report-only tool that analyzes
+APS includes `bb gherkin-ir-dry-checker`, a report-only tool that analyzes
 parser-produced JSON IR for duplicated or similar step text. Its purpose is to
 help agents normalize and prune the Gherkin in feature files before generated
 tests are created.
 
-Build or install it with the other APS tools, then run it after parsing newly
-written or changed feature files and before generating acceptance tests:
+Run it after parsing newly written or changed feature files and before
+generating acceptance tests:
 
 ```sh
-gherkin-parser features/example.feature build/acceptance/ir/example.json
-gherkin-ir-dry-checker build/acceptance/ir/example.json build/acceptance/dry/example.json
+bb gherkin-parser features/example.feature build/acceptance/ir/example.json
+bb gherkin-ir-dry-checker build/acceptance/ir/example.json build/acceptance/dry/example.json
 ```
 
 The checker does not rewrite feature files, IR, generated tests, runtimes, or
@@ -133,8 +150,8 @@ different ways or when repeated steps inside one scenario should be pruned.
 
 Typical workflow:
 
-1. Parse each `.feature` file into JSON IR with `gherkin-parser`.
-2. Run `gherkin-ir-dry-checker` on each IR file.
+1. Parse each `.feature` file into JSON IR with `bb gherkin-parser`.
+2. Run `bb gherkin-ir-dry-checker` on each IR file.
 3. Review findings such as `duplicate-in-scenario`, `placeholder-variant`,
    `near-duplicate`, and `possible-synonym`.
 4. Normalize Gherkin wording where the different forms are accidental drift.
@@ -149,17 +166,17 @@ the same shape but different setup or assertion semantics.
 When installing the pipeline in a project, an agent usually:
 
 1. Creates one or more feature files that exercise real project behavior.
-2. Parses each feature into JSON IR with `gherkin-parser`.
-3. Optionally runs `gherkin-ir-dry-checker` on each IR and uses the report to
-   normalize and prune feature-file Gherkin.
+2. Parses each feature into JSON IR with `bb gherkin-parser`.
+3. Optionally runs `bb gherkin-ir-dry-checker` on each IR and uses the report
+   to normalize and prune feature-file Gherkin.
 4. Creates project-specific generated entry points from each IR.
 5. Implements the runtime and step handlers needed by those generated tests.
 6. Adds a normal acceptance script that parses, generates, and runs the
    generated tests.
 7. Adds a runner adapter that can stay hot and accept mutation jobs over
    stdin/stdout.
-8. Runs `gherkin-mutator` and improves scenarios or handlers until important
-   mutations are killed.
+8. Runs `bb gherkin-mutator` and improves scenarios or handlers until
+   important mutations are killed.
 9. Adds parser, generator, runtime, handler, adapter, and mutator coverage at
    the project-appropriate level.
 

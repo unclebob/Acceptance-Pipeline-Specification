@@ -1,0 +1,6 @@
+{:paths ["bb/src" "bb/test"]
+ :tasks
+ {gherkin-parser aps.cli.gherkin-parser/-main
+  gherkin-ir-dry-checker aps.cli.gherkin-ir-dry-checker/-main
+  gherkin-mutator aps.cli.gherkin-mutator/-main
+  test aps.test-runner/-main}}

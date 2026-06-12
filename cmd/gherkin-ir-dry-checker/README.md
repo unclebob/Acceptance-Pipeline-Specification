@@ -1,8 +1,15 @@
 # Gherkin IR DRY Checker
 
-`gherkin-ir-dry-checker` analyzes one APS Gherkin JSON IR file and writes a
+`bb gherkin-ir-dry-checker` analyzes one APS Gherkin JSON IR file and writes a
 JSON report describing duplicated or similar step text. Its purpose is to help
-agents normalize and prune the Gherkin in feature files.
+agents normalize and prune the Gherkin in feature files. The Go binary
+`gherkin-ir-dry-checker` is available as a fallback when Babashka is not.
+
+```sh
+bb gherkin-ir-dry-checker [--include-exact] <json-ir> <report-output>
+```
+
+Fallback:
 
 ```sh
 gherkin-ir-dry-checker [--include-exact] <json-ir> <report-output>
@@ -11,8 +18,8 @@ gherkin-ir-dry-checker [--include-exact] <json-ir> <report-output>
 Example:
 
 ```sh
-gherkin-parser features/checkout.feature build/acceptance/ir/checkout.json
-gherkin-ir-dry-checker build/acceptance/ir/checkout.json build/acceptance/dry/checkout.json
+bb gherkin-parser features/checkout.feature build/acceptance/ir/checkout.json
+bb gherkin-ir-dry-checker build/acceptance/ir/checkout.json build/acceptance/dry/checkout.json
 ```
 
 ## What It Reports

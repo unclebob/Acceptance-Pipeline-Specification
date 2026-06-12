@@ -2,13 +2,21 @@
 
 ## Purpose
 
-This document specifies `gherkin-parser`, the portable command that converts a
-small deterministic Gherkin subset into the JSON intermediate representation
-used by the acceptance generator, runtime, and mutator.
+This document specifies `bb gherkin-parser`, the primary portable command that
+converts a small deterministic Gherkin subset into the JSON intermediate
+representation used by the acceptance generator, runtime, and mutator. The Go
+binary `gherkin-parser` is a fallback for environments where Babashka is not
+available.
 
 ## Parser Command
 
-The parser accepts exactly two positional arguments:
+The primary parser task accepts exactly two positional arguments:
+
+```text
+bb gherkin-parser <feature-file> <json-output>
+```
+
+Fallback Go binary:
 
 ```text
 gherkin-parser <feature-file> <json-output>
@@ -330,4 +338,3 @@ dates, commands, messages, or enums.
    header.
 6. Parser preserves scenario, step, and example row order.
 7. Parser records parameters from step text in appearance order.
-
