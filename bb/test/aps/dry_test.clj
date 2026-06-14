@@ -87,6 +87,14 @@
     (is (= 1 (:exit result)))
     (is (re-find #"No such file|missing.json" (:output result)))))
 
+(deftest dry-cli-prints-help
+  (let [result (cli-helper/run-bb-task ["gherkin-ir-dry-checker" "--help"])]
+    (is (= 0 (:exit result)))
+    (is (re-find #"usage: gherkin-ir-dry-checker" (:output result)))
+    (is (re-find #"--include-exact" (:output result)))
+    (is (re-find #"<json-ir>" (:output result)))
+    (is (re-find #"Findings include kind" (:output result)))))
+
 (deftest reports-locations-for-background-and-scenario-steps
   (let [report (dry/analyze duplication-feature {:include-exact true})
         locations (mapcat :locations (mapcat :members (:findings report)))]

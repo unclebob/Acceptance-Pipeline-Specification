@@ -1,5 +1,6 @@
 (ns aps.mutator-cli-test
-  (:require [aps.cli.gherkin-mutator :as cli]
+  (:require [aps.cli-test-helper :as cli-helper]
+            [aps.cli.gherkin-mutator :as cli]
             [clojure.test :refer [deftest is]]))
 
 (deftest parses-durations
@@ -35,6 +36,14 @@
   (is (thrown-with-msg? clojure.lang.ExceptionInfo
                         #"unknown option --wat"
                         (#'cli/parse-args ["--wat"]))))
+
+(deftest mutator-cli-prints-help
+  (let [result (cli-helper/run-bb-task ["gherkin-mutator" "--help"])]
+    (is (= 0 (:exit result)))
+    (is (re-find #"usage: gherkin-mutator" (:output result)))
+    (is (re-find #"--runner-worker <command>" (:output result)))
+    (is (re-find #"--level full\\|hard\\|soft" (:output result)))
+    (is (re-find #"Exit codes:" (:output result)))))
 
 (deftest report-success-and-failure-predicates
   (is (#'cli/successful-report? {}))
