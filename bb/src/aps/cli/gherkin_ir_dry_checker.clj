@@ -4,12 +4,12 @@
   (:gen-class))
 
 (def help-text
-  (str "usage: gherkin-ir-dry-checker [--include-exact] <json-ir> <report-output>\n"
+  (str "usage: bb gherkin-ir-dry-checker [--include-exact] <json-ir> <report-output>\n"
        "\n"
        "Analyze parsed Gherkin JSON IR for repeated or nearly repeated steps.\n"
        "\n"
        "Arguments:\n"
-       "  <json-ir>        Path to JSON IR produced by gherkin-parser.\n"
+       "  <json-ir>        Path to JSON IR produced by bb gherkin-parser.\n"
        "  <report-output>  Path where the DRY analysis JSON report should be written.\n"
        "\n"
        "Options:\n"
@@ -32,7 +32,7 @@
 
 (defn- print-usage-error! []
   (binding [*out* *err*]
-    (println "usage: gherkin-ir-dry-checker [--include-exact] <json-ir> <report-output>"))
+    (println "usage: bb gherkin-ir-dry-checker [--include-exact] <json-ir> <report-output>"))
   (System/exit 2))
 
 (defn -main [& args]

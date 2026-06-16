@@ -153,7 +153,7 @@
     (is (= "abc" (mutation/resolve-implementation-hash (str generated) "features/sample.feature" nil)))
     (is (= "unknown" (mutation/resolve-implementation-hash (str generated) "features/other.feature" nil)))))
 
-(deftest manifest-hashes-match-go-json-shape
+(deftest manifest-hashes-match-canonical-json-shape
   (let [scenario-with-empty-parameters {:name "No parameters"
                                         :steps [{:keyword "Then"
                                                  :text "the cave is ready"
@@ -169,7 +169,7 @@
                                          :parameters ["room"]}]
                                 :examples []}
         example-in-feature-order {"room" "1" "neighbors" "2, 5, 8"}
-        example-in-go-json-order {"neighbors" "2, 5, 8" "room" "1"}]
+        example-in-canonical-json-order {"neighbors" "2, 5, 8" "room" "1"}]
     (is (= (#'mutation/hash-json scenario-with-empty-parameters)
            (#'mutation/hash-json scenario-without-empty-parameters)))
     (is (not= (#'mutation/hash-json scenario-without-empty-parameters)
@@ -177,7 +177,7 @@
     (is (= (#'mutation/sha256 "{\"name\":\"Parameterized\",\"steps\":[{\"keyword\":\"Then\",\"text\":\"room \\u003croom\\u003e is ready\",\"parameters\":[\"room\"]}],\"examples\":[]}")
            (#'mutation/hash-json parameterized-scenario)))
     (is (= (#'mutation/hash-json example-in-feature-order)
-           (#'mutation/hash-json example-in-go-json-order)))))
+           (#'mutation/hash-json example-in-canonical-json-order)))))
 
 (deftest metadata-slug-keeps-digits-and-trims-hyphens
   (is (= "features-123-sample-feature"

@@ -3,7 +3,7 @@
   (:gen-class))
 
 (def help-text
-  (str "usage: gherkin-parser <feature-file> <json-output>\n"
+  (str "usage: bb gherkin-parser <feature-file> <json-output>\n"
        "\n"
        "Parse a Gherkin feature file into the Acceptance Pipeline JSON IR.\n"
        "\n"
@@ -28,7 +28,7 @@
 
 (defn- print-usage-error! []
   (binding [*out* *err*]
-    (println "usage: gherkin-parser <feature-file> <json-output>"))
+    (println "usage: bb gherkin-parser <feature-file> <json-output>"))
   (System/exit 2))
 
 (defn -main [& args]

@@ -8,11 +8,10 @@ generates executable acceptance test entry points, runs those tests, and uses
 acceptance mutation to check whether example data is actually connected to the
 application under test.
 
-Some pipeline tools are pre-supplied Babashka tasks from this repository. Agents
-should use the `bb ...` commands by default. The equivalent Go commands are
-fallbacks only for target environments where Babashka is not available. Other
-components are project-dependent and are written by the agents responsible for
-installing and maintaining acceptance testing in the target project.
+Some pipeline tools are pre-supplied Babashka tasks from this repository.
+Agents should use the `bb ...` commands. Other components are
+project-dependent and are written by the agents responsible for installing and
+maintaining acceptance testing in the target project.
 
 Acceptance mutation means mutating Gherkin example values in the
 specification-derived JSON IR. It does not mean conventional mutation testing of
@@ -52,7 +51,7 @@ checks whether the acceptance tests fail when important example values change.
 
 ## Component Map
 
-Portable tools in this repository are primarily exposed as Babashka tasks:
+Portable tools in this repository are exposed as Babashka tasks:
 
 1. `bb gherkin-parser`: reads the supported Gherkin subset and writes JSON IR.
 2. JSON IR reader/writer support: loads and stores the canonical feature
@@ -69,9 +68,6 @@ bb gherkin-parser <feature-file> <json-output>
 bb gherkin-ir-dry-checker [--include-exact] <json-ir> <report-output>
 bb gherkin-mutator --runner-worker "<command>" [options]
 ```
-
-Go command binaries with the same names are maintained only as fallbacks. Do not
-install or prefer them when the target environment can run Babashka.
 
 Project-specific components created by agents as needed:
 
@@ -101,21 +97,13 @@ Read the specs in this order:
 
 ## Command Entry Points
 
-A conforming setup should prefer these Babashka command shapes:
+A conforming setup should use these Babashka command shapes:
 
 ```text
 bb gherkin-parser <feature-file> <json-output>
 bb gherkin-ir-dry-checker [--include-exact] <json-ir> <report-output>
 acceptance-entrypoint-generator <json-ir> <generated-test-output>
 bb gherkin-mutator [options]
-```
-
-Only if Babashka is unavailable, use the fallback Go binaries:
-
-```text
-gherkin-parser <feature-file> <json-output>
-gherkin-ir-dry-checker [--include-exact] <json-ir> <report-output>
-gherkin-mutator [options]
 ```
 
 Common generated paths are:

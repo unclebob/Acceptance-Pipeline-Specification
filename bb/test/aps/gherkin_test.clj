@@ -72,7 +72,7 @@ Examples:
 (deftest parser-cli-prints-help
   (let [result (cli-helper/run-bb-task ["gherkin-parser" "--help"])]
     (is (= 0 (:exit result)))
-    (is (re-find #"usage: gherkin-parser <feature-file> <json-output>" (:output result)))
+    (is (re-find #"usage: bb gherkin-parser <feature-file> <json-output>" (:output result)))
     (is (re-find #"Arguments:" (:output result)))
     (is (re-find #"<feature-file>" (:output result)))
     (is (re-find #"Exit codes:" (:output result)))))
