@@ -9,9 +9,11 @@ acceptance mutation to check whether example data is actually connected to the
 application under test.
 
 Some pipeline tools are pre-supplied Babashka tasks from this repository.
-Agents should use the `bb ...` commands. Other components are
-project-dependent and are written by the agents responsible for installing and
-maintaining acceptance testing in the target project.
+Agents should get the latest versions directly from the canonical repository
+and install them in the target project for convenient execution as `bb ...`
+commands. Other components are project-dependent and are written by the agents
+responsible for installing and maintaining acceptance testing in the target
+project.
 
 Acceptance mutation means mutating Gherkin example values in the
 specification-derived JSON IR. It does not mean conventional mutation testing of
@@ -118,6 +120,30 @@ acceptance/generated/
 The exact project test command, generated test extension, runtime, handlers, and
 adapter are project-specific.
 
+## Tool Source and Installation
+
+Agents should fetch the latest portable APS tools directly from:
+
+```text
+git@github.com:unclebob/Acceptance-Pipeline-Specification.git
+```
+
+Install the repository's Babashka task definitions and supporting `bb/src`
+sources into the target project, or install a project-local wrapper that invokes
+those files from a checked-out copy of the repository. The installed setup must
+make these commands convenient to run from the target project:
+
+```text
+bb gherkin-parser <feature-file> <json-output>
+bb gherkin-ir-dry-checker [--include-exact] <json-ir> <report-output>
+bb gherkin-mutator [options]
+```
+
+Agents should update the installed portable tools from the canonical repository
+when installing the pipeline and when maintaining an existing installation,
+unless the target project deliberately pins a known revision for reproducible
+builds.
+
 ## Gherkin IR DRY Checker
 
 APS includes `bb gherkin-ir-dry-checker`, a report-only tool that analyzes
@@ -155,19 +181,22 @@ the same shape but different setup or assertion semantics.
 
 When installing the pipeline in a project, an agent usually:
 
-1. Creates one or more feature files that exercise real project behavior.
-2. Parses each feature into JSON IR with `bb gherkin-parser`.
-3. Optionally runs `bb gherkin-ir-dry-checker` on each IR and uses the report
+1. Fetches the latest portable APS tools directly from the canonical repository.
+2. Installs those tools in the project so the `bb ...` commands are convenient
+   to run.
+3. Creates one or more feature files that exercise real project behavior.
+4. Parses each feature into JSON IR with `bb gherkin-parser`.
+5. Optionally runs `bb gherkin-ir-dry-checker` on each IR and uses the report
    to normalize and prune feature-file Gherkin.
-4. Creates project-specific generated entry points from each IR.
-5. Implements the runtime and step handlers needed by those generated tests.
-6. Adds a normal acceptance script that parses, generates, and runs the
+6. Creates project-specific generated entry points from each IR.
+7. Implements the runtime and step handlers needed by those generated tests.
+8. Adds a normal acceptance script that parses, generates, and runs the
    generated tests.
-7. Adds a runner adapter that can stay hot and accept mutation jobs over
+9. Adds a runner adapter that can stay hot and accept mutation jobs over
    stdin/stdout.
-8. Runs `bb gherkin-mutator` and improves scenarios or handlers until
+10. Runs `bb gherkin-mutator` and improves scenarios or handlers until
    important mutations are killed.
-9. Adds parser, generator, runtime, handler, adapter, and mutator coverage at
+11. Adds parser, generator, runtime, handler, adapter, and mutator coverage at
    the project-appropriate level.
 
 Normal acceptance should be part of regular verification. Acceptance mutation is
