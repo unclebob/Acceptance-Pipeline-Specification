@@ -101,10 +101,14 @@ the player is in room <_1>
 
 This is a high-confidence sign of possible feature-wording drift. Prefer
 normalizing the Gherkin source when the different placeholder names do not add
-meaning for the reader. If the different names do add meaning, the recommended
-project runtime default is regex or expression matching that captures the
-placeholder name and reads that key from the current example object, as
-specified in [acceptance-generator.md](acceptance-generator.md).
+meaning for the reader. When the underlying values are constant across example
+rows, move them out of the table and write them as literals in steps or
+`Background:`; the parser will infer the IR parameters. See
+[parser-spec.md](parser-spec.md#feature-authoring). If the different names do
+add meaning for varying example columns, the recommended project runtime
+default is regex or expression matching that captures the placeholder name and
+reads that key from the current example object, as specified in
+[acceptance-generator.md](acceptance-generator.md).
 
 ### Near Duplicate
 

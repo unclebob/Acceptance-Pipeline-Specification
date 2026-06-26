@@ -85,6 +85,11 @@ For scenarios without examples, use `example_1` or another stable name.
 Step handlers are the project-specific adapter layer. They connect Gherkin step
 text to project behavior.
 
+Handlers match JSON IR step text, not the original source feature file. After
+parameter inference, IR step text contains placeholders such as `<p1>` for
+inferred literals and `<amount>` for explicit example columns that vary per row.
+See [parser-spec.md](parser-spec.md#feature-authoring).
+
 Recommended project runtimes use regex or expression matching that extracts
 placeholder names from the matched step text. The handler then uses each
 captured placeholder name as the key into the current example object.
@@ -93,7 +98,7 @@ The portable minimum remains exact `text` matching, not keyword matching, so a
 minimal conforming runtime can match this step text directly:
 
 ```text
-"the result is <result>"
+"the result is <p1>"
 ```
 
 Handler inputs:
@@ -124,14 +129,14 @@ Handler requirements:
 
 For normal project use, regex or expression matching with placeholder-name
 capture should be the default style for step handlers. This lets one handler
-support a consistent Gherkin vocabulary while still preserving meaningful
-example parameter names.
+support a consistent step vocabulary in IR while values come from the current
+example object.
 
-For example, these step texts:
+For example, these IR step texts:
 
 ```text
-the player is in room <player_room>
-the player is in room <transport_room>
+the player is in room <p1>
+the player is in room <p2>
 ```
 
 may be handled by a single project-specific pattern equivalent to:
@@ -140,11 +145,13 @@ may be handled by a single project-specific pattern equivalent to:
 ^the player is in room <([A-Za-z0-9_]+)>$
 ```
 
-The handler receives the captured placeholder name, such as `player_room` or
-`transport_room`, and fetches that key from the example values. Regex or
-expression matching must still fail ambiguous or unsupported step text, and
-projects should keep patterns narrow enough that unrelated steps do not match
-the same handler.
+The handler receives the captured placeholder name, such as `p1` or `p2`, and
+fetches that key from the example values. Regex or expression matching must
+still fail ambiguous or unsupported step text, and projects should keep
+patterns narrow enough that unrelated steps do not match the same handler.
+
+Authors may still write varying example columns with explicit names such as
+`<amount>`. Handlers then fetch those author names from the example object.
 
 ## Generator Metadata
 

@@ -144,6 +144,36 @@ when installing the pipeline and when maintaining an existing installation,
 unless the target project deliberately pins a known revision for reproducible
 builds.
 
+## Writing Feature Files
+
+Authors should write constant values as literals in steps and `Background:`.
+The parser infers parameters from those literals when it builds JSON IR, so
+feature files do not need `<placeholders>` for values that stay the same on
+every example row.
+
+Keep `Examples:` tables for values that change from row to row. Reference those
+columns with explicit `<column_name>` placeholders in step text. When every row
+repeats the same value for a column, remove that column and move the value into
+a literal step or into `Background:` instead.
+
+```gherkin
+Background:
+  Given balance is 100
+
+Scenario Outline: Withdraw cash
+  When the customer withdraws <amount>
+  Then the remaining balance is <remaining>
+
+Examples:
+  | amount | remaining |
+  | 20     | 80        |
+  | 5      | 45        |
+```
+
+See [parser-spec.md](parser-spec.md#feature-authoring) for the full authoring
+rules and [parser-spec.md](parser-spec.md#parameter-inference) for inference
+behavior.
+
 ## Gherkin IR DRY Checker
 
 APS includes `bb gherkin-ir-dry-checker`, a report-only tool that analyzes

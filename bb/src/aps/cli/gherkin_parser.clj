@@ -3,7 +3,7 @@
   (:gen-class))
 
 (def help-text
-  (str "usage: bb gherkin-parser <feature-file> <json-output>\n"
+  (str "usage: bb gherkin-parser [--do-not-infer] <feature-file> <json-output>\n"
        "\n"
        "Parse a Gherkin feature file into the Acceptance Pipeline JSON IR.\n"
        "\n"
@@ -12,11 +12,13 @@
        "  <json-output>   Path where the parsed JSON IR should be written.\n"
        "\n"
        "Options:\n"
+       "  --do-not-infer  Disable parameter inference in the emitted JSON IR.\n"
        "  -h, --help      Print this help text and exit.\n"
        "\n"
        "Output:\n"
        "  Writes pretty JSON containing the feature name, background steps,\n"
-       "  scenarios, step keywords/text, parameters, and scenario examples.\n"
+       "  scenarios, step keywords/text, inferred or explicit parameters, and\n"
+       "  scenario examples.\n"
        "\n"
        "Exit codes:\n"
        "  0  Parsed and wrote the JSON IR, or printed help.\n"
@@ -28,20 +30,25 @@
 
 (defn- print-usage-error! []
   (binding [*out* *err*]
-    (println "usage: bb gherkin-parser <feature-file> <json-output>"))
+    (println "usage: bb gherkin-parser [--do-not-infer] <feature-file> <json-output>"))
   (System/exit 2))
+
+(defn- positional-args [args]
+  (remove #{"--do-not-infer"} args))
 
 (defn -main [& args]
   (cond
     (help-request? args)
     (println help-text)
 
-    (not= 2 (count args))
+    (not= 2 (count (positional-args args)))
     (print-usage-error!)
 
     :else
     (try
-      (gherkin/write-json! (second args) (gherkin/parse-file (first args)))
+      (let [[feature-path json-path] (positional-args args)
+            infer? (not (some #{"--do-not-infer"} args))]
+        (gherkin/write-json! json-path (gherkin/parse-file feature-path {:infer? infer?})))
       (catch Exception e
         (binding [*out* *err*]
           (println (.getMessage e)))

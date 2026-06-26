@@ -1,5 +1,6 @@
 (ns aps.gherkin
-  (:require [aps.json :as aps-json]
+  (:require [aps.inference :as inference]
+            [aps.json :as aps-json]
             [clojure.string :as str]))
 
 (def parameter-re #"<([A-Za-z0-9_]+)>")
@@ -98,7 +99,7 @@
 (defn- apply-line [state line line-no]
   ((line-handlers (classify-line line)) state line line-no))
 
-(defn parse-string [source]
+(defn- parse-source [source]
   (let [initial {:feature (array-map :name "" :scenarios [])
                  :current nil
                  :section :none
@@ -112,8 +113,15 @@
       (throw (ex-info "missing feature declaration" {})))
     feature))
 
-(defn parse-file [path]
-  (parse-string (slurp path)))
+(defn parse-string
+  ([source] (parse-string source {:infer? true}))
+  ([source {:keys [infer?] :or {infer? true}}]
+   (cond-> (parse-source source)
+     infer? inference/apply!)))
+
+(defn parse-file
+  ([path] (parse-file path {:infer? true}))
+  ([path opts] (parse-string (slurp path) opts)))
 
 (defn write-json! [path feature]
   (aps-json/write-pretty-file! path (aps-json/strip-empty-keys #{:background :parameters} feature)))
