@@ -37,8 +37,8 @@
        "  -h, --help                      Print this help text and exit.\n"
        "\n"
        "Output:\n"
-       "  Writes mutation metadata beside the feature and prints either a text or JSON\n"
-       "  report. A successful report has zero Survived mutations and zero Errors.\n"
+       "  Writes mutation metadata under <work-dir>/metadata and prints either a text\n"
+       "  or JSON report. A successful report has zero Survived mutations and zero Errors.\n"
        "\n"
        "Exit codes:\n"
        "  0  All mutations were killed, or help was printed.\n"
@@ -136,7 +136,7 @@
                               :implementation-hash implementation-hash
                               :status-interval-ms (parse-duration-ms (:status-interval opts))
                               :runner-command (str/split (:runner-worker opts) #"\s+")})]
-    (mutation/write-mutation-metadata! (:feature opts) feature report implementation-hash (:level opts) (successful-report? report))
+    (mutation/write-mutation-metadata! (:work-dir opts) (:feature opts) feature report implementation-hash (:level opts) (successful-report? report))
     (if (:json opts)
       (mutation/write-json-report! report)
       (mutation/write-text-report! report))

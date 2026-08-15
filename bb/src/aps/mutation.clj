@@ -35,7 +35,7 @@
     (catch Exception _ nil)))
 
 (declare mutate-value mutate-comma-list strip-metadata-line parse-metadata-line
-         metadata-implementation-hash metadata-path parse-worker-response
+         feature-metadata-slug mutation-metadata-path metadata-implementation-hash metadata-path parse-worker-response
          validated-worker-response dither-char shift-char)
 
 (defn- dither [path value]
@@ -254,7 +254,7 @@
 (defn- strip-metadata-line [state line]
   (handle-metadata-line strip-line-handlers keep-source-metadata-line state line))
 
-(defn- read-mutation-metadata [feature-path]
+(defn- read-legacy-mutation-metadata [feature-path]
   (try
     (let [content (slurp feature-path)
           lines (str/split content #"\n")
@@ -267,6 +267,17 @@
         (when (seq (:stamp parsed))
           {:stamp (:stamp parsed) :manifest {}})))
     (catch Exception _ nil)))
+
+(defn- read-sidecar-mutation-metadata [work-dir feature-path]
+  (try
+    (let [metadata (aps-json/read-json-file (mutation-metadata-path work-dir feature-path))]
+      {:stamp (or (:stamp metadata) "")
+       :manifest (or (:manifest metadata) {})})
+    (catch Exception _ nil)))
+
+(defn- read-mutation-metadata [work-dir feature-path]
+  (or (read-sidecar-mutation-metadata work-dir feature-path)
+      (read-legacy-mutation-metadata feature-path)))
 
 (def parse-line-handlers
   (assoc boundary-line-handlers
@@ -375,24 +386,22 @@
                                  (:scenarios previous)))]
     (update current :scenarios into reusable)))
 
-(defn write-mutation-metadata! [feature-path feature report implementation-hash level write-stamp?]
+(defn- mutation-metadata-path [work-dir feature-path]
+  (str (io/file work-dir "metadata" (str (feature-metadata-slug feature-path) ".mutation.json"))))
+
+(defn write-mutation-metadata! [work-dir feature-path feature report implementation-hash level write-stamp?]
   (let [content (slurp feature-path)
-        previous (read-mutation-metadata feature-path)
+        previous (read-mutation-metadata work-dir feature-path)
         cleaned (strip-mutation-metadata content)
         stamp (sha256 cleaned)
         manifest (cond-> (new-manifest feature-path feature report implementation-hash)
-                   previous (merge-reusable-previous-scenarios (:manifest previous) feature level))
-        manifest-json (json/generate-string manifest)
-        metadata (str (when write-stamp?
-                        (str "# mutation-stamp: sha256=" stamp "\n"))
-                      "# acceptance-mutation-manifest-begin\n"
-                      "# " manifest-json "\n"
-                      "# acceptance-mutation-manifest-end\n\n"
-                      (str/replace cleaned #"^\n+" ""))]
-    (spit feature-path metadata)))
+                   previous (merge-reusable-previous-scenarios (:manifest previous) feature level))]
+    (aps-json/write-pretty-file! (mutation-metadata-path work-dir feature-path)
+                                 (array-map :stamp (if write-stamp? stamp "")
+                                            :manifest manifest))))
 
-(defn- feature-stamp-valid? [feature-path]
-  (when-let [metadata (read-mutation-metadata feature-path)]
+(defn- feature-stamp-valid? [work-dir feature-path]
+  (when-let [metadata (read-mutation-metadata work-dir feature-path)]
     (and (seq (:stamp metadata))
          (= (:stamp metadata) (sha256 (strip-mutation-metadata (slurp feature-path)))))))
 
@@ -401,7 +410,7 @@
 
 (defn- whole-feature-skip [cfg metadata]
   (when (and (empty? (get-in metadata [:manifest :scenarios]))
-             (feature-stamp-valid? (:feature-path cfg)))
+             (feature-stamp-valid? (:work-dir cfg) (:feature-path cfg)))
     (set (range (count (get-in cfg [:feature :scenarios]))))))
 
 (defn- reusable-scenario-skips [cfg metadata mutations]
@@ -414,7 +423,7 @@
 (defn- accepted-skips [cfg mutations]
   (if (full-skip? cfg)
     #{}
-    (if-let [metadata (read-mutation-metadata (:feature-path cfg))]
+    (if-let [metadata (read-mutation-metadata (:work-dir cfg) (:feature-path cfg))]
       (or (whole-feature-skip cfg metadata)
           (reusable-scenario-skips cfg metadata mutations))
       #{})))

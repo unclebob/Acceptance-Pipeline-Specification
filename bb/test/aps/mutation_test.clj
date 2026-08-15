@@ -209,44 +209,52 @@
 
 (deftest writes-and-reuses-mutation-metadata
   (let [dir (.toFile (temp-dir))
+        work-dir (str (io/file dir "work"))
         feature-path (str (io/file dir "sample.feature"))
+        feature-content "Feature: Withdrawals\n\nScenario Outline: Withdraw cash\n  Then x is <amount>\n\nExamples:\n  | amount | balance | remaining |\n  | 20     | 100     | 80        |\n"
         feature mutation-feature
         mutations (mutation/discover feature)
         clean-report {:summary {:Total 3 :Killed 3 :Survived 0 :Errors 0}
                       :results (mapv #(mutation/make-result % {:outcome "test_failure"}) mutations)}]
-    (spit feature-path "Feature: Withdrawals\n\nScenario Outline: Withdraw cash\n  Then x is <amount>\n\nExamples:\n  | amount | balance | remaining |\n  | 20     | 100     | 80        |\n")
-    (mutation/write-mutation-metadata! feature-path feature clean-report "impl-a" "hard" true)
+    (spit feature-path feature-content)
+    (mutation/write-mutation-metadata! work-dir feature-path feature clean-report "impl-a" "hard" true)
     (let [content (slurp feature-path)
-          metadata (#'mutation/read-mutation-metadata feature-path)]
-      (is (str/includes? content "# mutation-stamp: sha256="))
+          metadata-path (#'mutation/mutation-metadata-path work-dir feature-path)
+          metadata (#'mutation/read-mutation-metadata work-dir feature-path)]
+      (is (= feature-content content))
+      (is (str/includes? (slurp metadata-path) "\"stamp\""))
       (is (= "Withdrawals" (get-in metadata [:manifest :feature_name])))
       (is (= #{0} (#'mutation/accepted-skips {:feature feature
                                               :feature-path feature-path
+                                              :work-dir work-dir
                                               :level "hard"
                                               :implementation-hash "impl-a"}
                                              mutations)))
       (is (= #{} (#'mutation/accepted-skips {:feature feature
                                              :feature-path feature-path
+                                             :work-dir work-dir
                                              :level "full"
                                              :implementation-hash "impl-a"}
                                             mutations)))
       (is (= #{} (#'mutation/accepted-skips {:feature feature
                                              :feature-path feature-path
+                                             :work-dir work-dir
                                              :level "hard"
                                              :implementation-hash "impl-b"}
                                             mutations)))
       (is (= #{0} (#'mutation/accepted-skips {:feature feature
                                               :feature-path feature-path
+                                              :work-dir work-dir
                                               :level "soft"
                                               :implementation-hash "impl-b"}
                                              mutations))))))
 
-(deftest reads-stamp-only-mutation-metadata
+(deftest reads-legacy-stamp-only-mutation-metadata
   (let [dir (.toFile (temp-dir))
         feature-path (str (io/file dir "stamp.feature"))]
     (spit feature-path "# mutation-stamp: sha256=abc\n\nFeature: Stamp\n")
     (is (= {:stamp "abc" :manifest {}}
-           (#'mutation/read-mutation-metadata feature-path)))))
+           (#'mutation/read-mutation-metadata (str (io/file dir "work")) feature-path)))))
 
 (deftest scenario-summary-shortcut-and-path-parsing
   (is (= 0 (#'mutation/scenario-index-from-path "$.scenarios[0].examples[1].amount")))
@@ -294,23 +302,24 @@
 
 (deftest validates-feature-mutation-stamp
   (let [dir (.toFile (temp-dir))
+        work-dir (str (io/file dir "work"))
         feature-path (str (io/file dir "sample.feature"))
         feature mutation-feature
         mutations (mutation/discover feature)
         clean-report {:summary {:Total 3 :Killed 3 :Survived 0 :Errors 0}
                       :results (mapv #(mutation/make-result % {:outcome "test_failure"}) mutations)}]
     (spit feature-path "Feature: Withdrawals\n\nScenario Outline: Withdraw cash\n  Then x is <amount>\n\nExamples:\n  | amount | balance | remaining |\n  | 20     | 100     | 80        |\n")
-    (is (false? (boolean (#'mutation/feature-stamp-valid? feature-path))))
-    (mutation/write-mutation-metadata! feature-path feature clean-report "impl-a" "hard" true)
-    (is (#'mutation/feature-stamp-valid? feature-path))
+    (is (false? (boolean (#'mutation/feature-stamp-valid? work-dir feature-path))))
+    (mutation/write-mutation-metadata! work-dir feature-path feature clean-report "impl-a" "hard" true)
+    (is (#'mutation/feature-stamp-valid? work-dir feature-path))
     (spit feature-path (str (slurp feature-path) "\n# changed\n"))
-    (is (false? (boolean (#'mutation/feature-stamp-valid? feature-path))))))
+    (is (false? (boolean (#'mutation/feature-stamp-valid? work-dir feature-path))))))
 
 (deftest ignores-malformed-mutation-metadata
   (let [dir (.toFile (temp-dir))
         feature-path (str (io/file dir "bad.feature"))]
     (spit feature-path "# acceptance-mutation-manifest-begin\n# not-json\n# acceptance-mutation-manifest-end\n\nFeature: Bad\n")
-    (is (nil? (#'mutation/read-mutation-metadata feature-path)))))
+    (is (nil? (#'mutation/read-mutation-metadata (str (io/file dir "work")) feature-path)))))
 
 (deftest run-uses-persistent-worker-protocol
   (let [dir (.toFile (temp-dir))

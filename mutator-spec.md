@@ -113,7 +113,7 @@ feature file
   -> execute each non-skipped mutation using generated tests and mutated IR
   -> classify mutation results
   -> print final report
-  -> update scenario manifest and feature mutation stamp
+  -> update work-dir scenario manifest and feature mutation stamp
 ```
 
 ## Mutation Scope
@@ -260,6 +260,8 @@ The mutator creates:
     <generated acceptance tests>
     metadata/
       <feature-metadata-name>.json
+  metadata/
+    <feature-metadata-name>.mutation.json
   mutations/
     m1/
       feature.json
@@ -375,54 +377,55 @@ of `killed`, `survived`, or `error`.
 
 ### Feature Mutation Stamp
 
-A feature mutation stamp may be used as a whole-file shortcut when the feature
+A feature mutation stamp may be used as a whole-file shortcut when the metadata
 has no scenario manifest and the selected level is not `full`.
 
-The stamp records a hash of the feature content excluding the stamp line
-itself:
+The stamp records a hash of the feature content excluding any legacy in-feature
+mutation metadata. It is stored in:
 
-```gherkin
-# mutation-stamp: sha256=<feature-content-hash>
+```text
+<work-dir>/metadata/<feature-metadata-name>.mutation.json
 ```
 
 A stale, missing, malformed, or mismatched stamp must not be trusted.
 
 ### Scenario Manifest
 
-A scenario manifest may be used for scenario-level reuse. It is stored as a
-comment block near the top of the feature file:
+A scenario manifest may be used for scenario-level reuse. It is stored with the
+stamp in:
 
-```gherkin
-# acceptance-mutation-manifest-begin
-# { ... JSON manifest ... }
-# acceptance-mutation-manifest-end
+```text
+<work-dir>/metadata/<feature-metadata-name>.mutation.json
 ```
 
-The manifest JSON must contain:
+The mutation metadata JSON must contain:
 
 ```json
 {
-  "version": 1,
-  "tested_at": "<timestamp>",
-  "feature_name": "<feature name>",
-  "feature_path": "<feature path>",
-  "background_hash": "<hash>",
-  "implementation_hash": "<generated-files-hash>",
-  "scenarios": [
-    {
-      "index": 0,
-      "name": "<scenario name>",
-      "scenario_hash": "<hash>",
-      "mutation_count": 0,
-      "result": {
-        "Total": 0,
-        "Killed": 0,
-        "Survived": 0,
-        "Errors": 0
-      },
-      "tested_at": "<timestamp>"
-    }
-  ]
+  "stamp": "<feature-content-hash>",
+  "manifest": {
+    "version": 1,
+    "tested_at": "<timestamp>",
+    "feature_name": "<feature name>",
+    "feature_path": "<feature path>",
+    "background_hash": "<hash>",
+    "implementation_hash": "<generated-files-hash>",
+    "scenarios": [
+      {
+        "index": 0,
+        "name": "<scenario name>",
+        "scenario_hash": "<hash>",
+        "mutation_count": 0,
+        "result": {
+          "Total": 0,
+          "Killed": 0,
+          "Survived": 0,
+          "Errors": 0
+        },
+        "tested_at": "<timestamp>"
+      }
+    ]
+  }
 }
 ```
 
@@ -458,9 +461,15 @@ Skipped scenarios keep their previous manifest entries. Executed scenarios
 receive new result summaries and timestamps. Deleted scenarios must be removed
 from the next manifest.
 
-Every run should write a fresh scenario manifest containing scenarios that have
-zero survived mutations and zero errors. A successful run with no surviving
-mutations and no errors should also write a fresh feature mutation stamp.
+Every run should write a fresh sidecar scenario manifest containing scenarios
+that have zero survived mutations and zero errors. A successful run with no
+surviving mutations and no errors should also write a fresh feature mutation
+stamp.
+
+New mutator runs must not write stamps or manifests into product `.feature`
+files. Implementations may read legacy in-feature `# mutation-stamp:` and
+`# acceptance-mutation-manifest-*` comment blocks for migration, and hash
+calculation must ignore those legacy blocks.
 
 ## Reports
 
