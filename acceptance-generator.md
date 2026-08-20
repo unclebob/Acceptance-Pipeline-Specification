@@ -68,7 +68,8 @@ Runtime responsibilities:
 5. Prepend background steps to each execution.
 6. Execute steps in order.
 7. Resolve placeholder values from the current example object.
-8. Route each step to a project step handler.
+8. Route each step to a project step handler, passing that step's attached
+   table when present.
 9. Report any unsupported step, missing value, invalid conversion, or failed
    assertion as a test failure.
 
@@ -106,7 +107,12 @@ Handler inputs:
 ```text
 world/state object for the current scenario execution
 example values for the current scenario execution
+attached table for the current step, when present
 ```
+
+A Then table is not in the example object. Handlers that only see step `text`
+and the current example cannot assert against it. When the current step has a
+`table`, the runtime must pass that object to the handler.
 
 Handler outputs:
 
@@ -126,6 +132,8 @@ Handler requirements:
 5. Missing, malformed, or semantically invalid values must fail the current
    test.
 6. Unsupported step text must fail the current test.
+7. When a step has an attached table, handlers must use that table for setup
+   or assertion. The example object is not a substitute for a step data table.
 
 For normal project use, regex or expression matching with placeholder-name
 capture should be the default style for step handlers. This lets one handler
@@ -229,8 +237,9 @@ are still valid for the generated test entry points for a feature.
    execution.
 10. Step handlers fail missing, malformed, semantically invalid, or unsupported
    steps.
-11. Generated tests are deterministic for a fixed IR.
-12. Metadata is written per feature under `metadata/`.
-13. Metadata filenames follow the strict lowercase-and-hyphen mapping.
-14. Metadata uses `schema_version`.
-15. `implementation_hash` covers only generated acceptance files.
+11. Runtime passes each step's attached table to the handler when present.
+12. Generated tests are deterministic for a fixed IR.
+13. Metadata is written per feature under `metadata/`.
+14. Metadata filenames follow the strict lowercase-and-hyphen mapping.
+15. Metadata uses `schema_version`.
+16. `implementation_hash` covers only generated acceptance files.

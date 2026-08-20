@@ -156,6 +156,10 @@ columns with explicit `<column_name>` placeholders in step text. When every row
 repeats the same value for a column, remove that column and move the value into
 a literal step or into `Background:` instead.
 
+A `|` table under a step is also specification data. The parser stores it on
+that step in JSON IR, and the mutator changes its cells. Do not rewrite a step
+data table as `Examples:` just so the pipeline can see the values.
+
 ```gherkin
 Background:
   Given balance is 100

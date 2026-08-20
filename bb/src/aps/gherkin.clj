@@ -57,21 +57,60 @@
     (update-in state [:feature :scenarios current :examples]
                conj (into (array-map) (map vector headers cells)))))
 
+(defn- current-steps-path [state]
+  (case (:section state)
+    :background [:feature :background]
+    :scenario (when (some? (:current state))
+                [:feature :scenarios (:current state) :steps])
+    nil))
+
+(defn- reject-table-row [line-no]
+  (throw (ex-info (format "line %d: table row is not attached to a step" line-no) {})))
+
+(defn- reject-table-width [line-no cells headers]
+  (throw (ex-info (format "line %d: table row has %d cells, header has %d"
+                          line-no (count cells) (count headers)) {})))
+
+(defn- start-step-table [state path idx cells]
+  (-> state
+      (assoc :headers cells)
+      (assoc-in (conj path idx :table) (array-map :headers cells :rows []))))
+
+(defn- append-step-table-row [state path idx cells line-no]
+  (let [headers (:headers state)]
+    (when (not= (count cells) (count headers))
+      (reject-table-width line-no cells headers))
+    (update-in state (conj path idx :table :rows) conj cells)))
+
+(defn- add-step-table-row [state cells line-no]
+  (let [path (current-steps-path state)
+        steps (when path (get-in state path))
+        idx (when (seq steps) (dec (count steps)))]
+    (cond
+      (or (nil? path) (nil? idx)) (reject-table-row line-no)
+      (nil? (:headers state)) (start-step-table state path idx cells)
+      :else (append-step-table-row state path idx cells line-no))))
+
+(defn- apply-example-table-row [state cells line-no]
+  (if (nil? (:headers state))
+    (assoc state :headers cells)
+    (add-example-row state cells line-no)))
+
 (defn- apply-table-line [state line line-no]
-  (if (or (not= (:section state) :examples) (nil? (:current state)))
-    state
-    (let [cells (parse-table-row line)]
-      (if (nil? (:headers state))
-        (assoc state :headers cells)
-        (add-example-row state cells line-no)))))
+  (let [cells (parse-table-row line)]
+    (if (= :examples (:section state))
+      (apply-example-table-row state cells line-no)
+      (add-step-table-row state cells line-no))))
 
 (def step-handlers
   {:background (fn [state step _]
-                 (update-in state [:feature :background] (fnil conj []) step))
+                 (-> state
+                     (update-in [:feature :background] (fnil conj []) step)
+                     (assoc :headers nil)))
    :scenario (fn [state step _]
                (-> state
                    (update-in [:feature :scenarios (:current state) :steps] conj step)
-                   (assoc :section :scenario)))
+                   (assoc :section :scenario :headers nil)))
    :examples (fn [state step line-no]
                ((:scenario step-handlers) state step line-no))})
 

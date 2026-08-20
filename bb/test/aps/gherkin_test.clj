@@ -64,6 +64,21 @@ Examples:
     (parser-cli/-main (str input) (str output))
     (is (= "Withdrawals" (:name (json/parse-string (slurp output) true))))))
 
+(deftest parser-cli-writes-step-data-tables
+  (let [dir (.toFile (java.nio.file.Files/createTempDirectory "aps-parser-table" (make-array java.nio.file.attribute.FileAttribute 0)))
+        input (io/file dir "replay.feature")
+        output (io/file dir "replay.json")]
+    (spit input
+          (str "Feature: Replay the same set-up\n"
+               "Scenario: Same set-up restores the hunt\n"
+               "  Given a hunt started with this setup:\n"
+               "    | piece  | room |\n"
+               "    | hunter | 2    |\n"))
+    (parser-cli/-main "--do-not-infer" (str input) (str output))
+    (let [ir (json/parse-string (slurp output) true)]
+      (is (= ["piece" "room"] (get-in ir [:scenarios 0 :steps 0 :table :headers])))
+      (is (= [["hunter" "2"]] (get-in ir [:scenarios 0 :steps 0 :table :rows]))))))
+
 (deftest parser-cli-exits-nonzero-on-parse-error
   (let [result (cli-helper/run-bb-task ["gherkin-parser" "missing.feature" "/tmp/out.json"])]
     (is (= 1 (:exit result)))
@@ -76,4 +91,5 @@ Examples:
     (is (re-find #"--do-not-infer" (:output result)))
     (is (re-find #"Arguments:" (:output result)))
     (is (re-find #"<feature-file>" (:output result)))
+    (is (re-find #"step data tables" (:output result)))
     (is (re-find #"Exit codes:" (:output result)))))

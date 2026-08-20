@@ -5,6 +5,7 @@
             [aps.json-test]
             [aps.mutator-cli-test]
             [aps.mutation-test]
+            [aps.step-data-table-scenarios]
             [clojure.test :as test]))
 
 (defn -main [& _]
@@ -13,5 +14,6 @@
                                              'aps.dry-test
                                              'aps.json-test
                                              'aps.mutator-cli-test
-                                             'aps.mutation-test)]
+                                             'aps.mutation-test
+                                             'aps.step-data-table-scenarios)]
     (System/exit (if (zero? (+ fail error)) 0 1))))

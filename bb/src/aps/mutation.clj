@@ -93,28 +93,78 @@
         (mutate-float seed trimmed)
         (dither path value))))
 
+(defn- candidate [path original extra]
+  (let [mutated (mutate-value path original)]
+    (when (not= mutated original)
+      (merge extra
+             (array-map :Path path
+                        :Description (format "%s: %s -> %s" path original mutated)
+                        :Original original
+                        :Mutated mutated)))))
+
+(defn- example-mutations [scenario-index scenario]
+  (for [[example-index example] (map-indexed vector (:examples scenario))
+        key (sort (keys example))
+        :let [original (get example key)
+              path (format "$.scenarios[%d].examples[%d].%s" scenario-index example-index (name key))
+              mutation (candidate path original {:scenario scenario-index
+                                                 :example example-index
+                                                 :key key})]
+        :when mutation]
+    mutation))
+
+(defn- table-cell-mutations [path-prefix table extra]
+  (for [[row-index row] (map-indexed vector (:rows table))
+        [col-index original] (map-indexed vector row)
+        :let [path (format "%s.table.rows[%d][%d]" path-prefix row-index col-index)
+              mutation (candidate path original (assoc extra :row row-index :col col-index))]
+        :when mutation]
+    mutation))
+
+(defn- step-table-mutations [path-prefix steps extra]
+  (mapcat
+   (fn [[step-index step]]
+     (if-let [table (:table step)]
+       (table-cell-mutations (format "%s[%d]" path-prefix step-index)
+                             table
+                             (assoc extra :step step-index))
+       []))
+   (map-indexed vector steps)))
+
 (defn discover [feature]
   (vec
    (map-indexed
     (fn [i mutation] (assoc mutation :ID (str "m" (inc i))))
-    (for [[scenario-index scenario] (map-indexed vector (:scenarios feature))
-          [example-index example] (map-indexed vector (:examples scenario))
-          key (sort (keys example))
-          :let [original (get example key)
-                path (format "$.scenarios[%d].examples[%d].%s" scenario-index example-index (name key))
-                mutated (mutate-value path original)]
-          :when (not= mutated original)]
-      (array-map :Path path
-                 :Description (format "%s: %s -> %s" path original mutated)
-                 :Original original
-                 :Mutated mutated
-                 :scenario scenario-index
-                 :example example-index
-                 :key key)))))
+    (concat
+     (step-table-mutations "$.background" (:background feature) {:section :background})
+     (mapcat
+      (fn [[scenario-index scenario]]
+        (concat
+         (example-mutations scenario-index scenario)
+         (step-table-mutations (format "$.scenarios[%d].steps" scenario-index)
+                               (:steps scenario)
+                               {:scenario scenario-index})))
+      (map-indexed vector (:scenarios feature)))))))
+
+(defn- example-mutation? [mutation]
+  (contains? mutation :key))
+
+(defn- background-table-mutation? [mutation]
+  (= :background (:section mutation)))
 
 (defn apply-mutation [feature mutation]
-  (assoc-in feature [:scenarios (:scenario mutation) :examples (:example mutation) (:key mutation)]
-            (:Mutated mutation)))
+  (cond
+    (example-mutation? mutation)
+    (assoc-in feature [:scenarios (:scenario mutation) :examples (:example mutation) (:key mutation)]
+              (:Mutated mutation))
+
+    (background-table-mutation? mutation)
+    (assoc-in feature [:background (:step mutation) :table :rows (:row mutation) (:col mutation)]
+              (:Mutated mutation))
+
+    :else
+    (assoc-in feature [:scenarios (:scenario mutation) :steps (:step mutation) :table :rows (:row mutation) (:col mutation)]
+              (:Mutated mutation))))
 
 (defn- mutation-view [mutation]
   (array-map :ID (:ID mutation)

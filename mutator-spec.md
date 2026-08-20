@@ -118,7 +118,8 @@ feature file
 
 ## Mutation Scope
 
-The mutator creates candidate mutations only from scenario example values.
+The mutator creates candidate mutations from scenario example values and from
+step data table cells, including tables attached to background steps.
 
 It must not mutate:
 
@@ -127,30 +128,38 @@ feature names
 scenario names
 step text
 step keywords
-background steps
+background step text
 example headers
+step table headers
 source code
 generated test logic
 ```
 
-Each mutation changes exactly one example cell.
+Each mutation changes exactly one example cell or exactly one table data cell.
 
 The base JSON IR must not be modified in place. Each mutation is applied to a
 deep copy of the base IR.
 
 ## Mutation Discovery Algorithm
 
-For each scenario, in scenario order:
+Discover mutations in this order:
 
-1. If the scenario has no examples, skip it.
-2. For each example row, in row order:
-3. For each example key, in lexicographic order:
-4. Read the original string value.
-5. Compute the mutated value using the value mutation rules.
-6. If the mutated value equals the original value, skip it.
-7. If a project-specific equivalent mutation filter rejects the mutation, skip
-   it.
-8. Create one mutation that changes only that cell.
+1. Background step tables, in step order. For each table, walk data rows in
+   row order and cells in column order. Do not mutate headers.
+2. For each scenario, in scenario order:
+   1. For each example row, in row order:
+   2. For each example key, in lexicographic order:
+   3. Read the original string value.
+   4. Compute the mutated value using the value mutation rules.
+   5. If the mutated value equals the original value, skip it.
+   6. If a project-specific equivalent mutation filter rejects the mutation,
+      skip it.
+   7. Create one mutation that changes only that cell.
+   8. Then walk that scenario's step tables in step order, data row order, and
+      column order, using the same value mutation rules.
+
+A scenario with no examples is still mutated when it has step table cells.
+Background table cells are discovered even when no scenario has examples.
 
 ## Mutation Identity
 
@@ -168,9 +177,12 @@ Mutation paths use:
 
 ```text
 $.scenarios[<scenario_index>].examples[<example_index>].<key>
+$.scenarios[<scenario_index>].steps[<step_index>].table.rows[<row_index>][<column_index>]
+$.background[<step_index>].table.rows[<row_index>][<column_index>]
 ```
 
-Indexes are zero-based. Keys are literal example object keys.
+Indexes are zero-based. Example keys are literal example object keys. Table
+row and column indexes address data cells, not headers.
 
 Descriptions use:
 
@@ -272,7 +284,7 @@ The mutator creates:
 For each mutation:
 
 1. Deep-copy the base IR.
-2. Apply the single example-cell change.
+2. Apply the single cell change.
 3. Write the mutated IR to `<work-dir>/mutations/<mutation-id>/feature.json`.
 4. Ask the runner adapter to execute the generated tests against that mutated
    IR.
@@ -429,10 +441,10 @@ The mutation metadata JSON must contain:
 }
 ```
 
-The `background_hash` covers all background steps. The `scenario_hash` covers
-the scenario name, scenario steps, example headers, and example values. The
-`implementation_hash` is the generator-provided hash of generated acceptance
-files only.
+The `background_hash` covers all background steps, including attached tables.
+The `scenario_hash` covers the scenario name, scenario steps, attached step
+tables, example headers, and example values. The `implementation_hash` is the
+generator-provided hash of generated acceptance files only.
 
 Differential levels:
 
@@ -510,7 +522,8 @@ and duration.
 
 ## Mutator Conformance Checklist
 
-1. Mutator generates mutations only for example cell values.
+1. Mutator generates mutations for example cell values and for step and
+   background table data cells, not headers.
 2. Mutator produces stable mutation IDs, paths, and descriptions.
 3. Mutator applies the portable value mutation rules.
 4. Mutator deep-copies the IR before applying each mutation.

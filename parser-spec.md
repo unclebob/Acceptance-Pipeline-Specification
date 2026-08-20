@@ -64,7 +64,6 @@ escaped pipes
 quoted table cells
 multiline cells
 doc strings
-data tables attached to steps
 semantic comments
 ```
 
@@ -74,8 +73,8 @@ semantic comments
 2. Lines whose first non-whitespace character is `#` are ignored.
 3. Leading and trailing whitespace are removed before classifying each line.
 4. Free-form lines that do not match supported syntax are ignored.
-5. Order must be preserved for background steps, scenarios, scenario steps, and
-   example rows.
+5. Order must be preserved for background steps, scenarios, scenario steps,
+   example rows, and step table rows.
 6. Example object key traversal is not guaranteed by JSON object order; any
    consumer that needs stable key order must sort keys explicitly.
 
@@ -131,6 +130,10 @@ either way.
 
 Use explicit `<placeholders>` only where example values vary per row. The parser
 does not rewrite source feature files.
+
+A table under a step is part of the specification. Those cells are stored on
+the step in JSON IR and can be mutated. Do not replace a step data table with
+an `Examples:` table just to make the pipeline see the values.
 
 ## Feature Rules
 
@@ -243,6 +246,37 @@ Repeated parameter names must be preserved as repeated entries.
 The parser does not expand parameters. Parameter expansion is a runtime
 responsibility.
 
+## Step Data Table Rules
+
+A `|` row immediately after a step, or after another `|` row already attached
+to that step, is a **step data table**.
+
+```gherkin
+Then the new hunt setup is:
+  | piece  | room |
+  | hunter | 2    |
+  | wumpus | 8    |
+```
+
+Parsing rules:
+
+1. A table row is recognized only when the trimmed line starts with `|`.
+2. Cells are parsed with the same pipe rules used for `Examples:` tables.
+3. The first row attached to a step is the header row.
+4. Every later data row must have the same number of cells as the header row.
+5. Header order and row order are preserved.
+6. Cell values are stored as strings.
+7. Background steps accept the same table attachment as scenario steps.
+
+A `|` row that is not under `Examples:` and has no preceding step in the
+current background or scenario is a parsing error. The parser must not
+silently ignore `|` rows.
+
+`Examples:` tables remain scenario example rows. They are distinct from step
+data tables. A scenario may have both.
+
+A data row whose cell count differs from the header count is a parsing error.
+
 ## Examples Table Rules
 
 An examples section starts with:
@@ -352,9 +386,15 @@ empty example object.
 
 ```json
 {
-  "keyword": "Given",
-  "text": "the input is <p1>",
-  "parameters": ["p1"]
+  "keyword": "Then",
+  "text": "the new hunt setup is:",
+  "table": {
+    "headers": ["piece", "room"],
+    "rows": [
+      ["hunter", "2"],
+      ["wumpus", "8"]
+    ]
+  }
 }
 ```
 
@@ -369,11 +409,23 @@ Optional fields:
 
 ```text
 parameters  array of strings; omit or use [] when no placeholders are present
+table       object with headers and rows; omit when the step has no data table
 ```
 
 The `parameters` field is derived from `text`. Consumers should treat `text` as
 authoritative and may validate that `parameters` agrees with the placeholders
 found in `text`.
+
+A `table` object has:
+
+```text
+headers  array of strings, in source order
+rows     array of arrays of strings, in source order; may be empty
+```
+
+Do not fold step table cells into example columns. Table cells stay on the
+step. Parameter inference rewrites step `text` only and must preserve any
+attached table.
 
 ### Example Object
 
@@ -574,14 +626,20 @@ scenario's example rows.
 ## Parser Conformance Checklist
 
 1. Parser accepts `Feature:`, `Background:`, `Scenario:`, `Scenario Outline:`,
-   supported steps, placeholders, and examples tables.
+   supported steps, placeholders, examples tables, and step data tables.
 2. Parser writes the JSON IR shape defined in this document.
 3. Parser rejects a file with no feature declaration.
 4. Parser rejects examples outside a scenario.
 5. Parser rejects an examples data row whose cell count differs from the
    header.
-6. Parser preserves scenario, step, and example row order.
+6. Parser preserves scenario, step, example row, and step table row order.
 7. Parser records parameters from step text in appearance order.
 8. Parser infers parameters by default, supports `--do-not-infer`, merges
    inferred columns into existing example tables, and rejects missing explicit
    placeholder columns after inference.
+9. Parser attaches `|` rows after a step to that step as a data table and
+   does not fold those cells into examples.
+10. Parser rejects a `|` row that is not under `Examples:` and has no
+    preceding step.
+11. Parser rejects a step table data row whose cell count differs from the
+    header.
