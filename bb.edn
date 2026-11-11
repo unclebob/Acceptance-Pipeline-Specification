@@ -3,4 +3,7 @@
  {gherkin-parser aps.cli.gherkin-parser/-main
   gherkin-ir-dry-checker aps.cli.gherkin-ir-dry-checker/-main
   gherkin-mutator aps.cli.gherkin-mutator/-main
+  gherkin-heldout-split aps.cli.gherkin-heldout-split/-main
+  gherkin-heldout-gate aps.cli.gherkin-heldout-gate/-main
+  gherkin-heldout-verify aps.cli.gherkin-heldout-verify/-main
   test aps.test-runner/-main}}

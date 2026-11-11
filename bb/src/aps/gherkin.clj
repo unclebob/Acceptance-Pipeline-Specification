@@ -106,5 +106,8 @@
 (defn parse-file [path]
   (parse-string (slurp path)))
 
+(defn strip-feature-for-write [feature]
+  (aps-json/strip-empty-keys #{:background :parameters} feature))
+
 (defn write-json! [path feature]
-  (aps-json/write-pretty-file! path (aps-json/strip-empty-keys #{:background :parameters} feature)))
+  (aps-json/write-pretty-file! path (strip-feature-for-write feature)))

@@ -61,11 +61,21 @@ Portable tools in this repository are primarily exposed as Babashka tasks:
 4. `bb gherkin-mutator`: builds deterministic example-value mutations, runs
    them through a persistent runner worker, and reports killed, survived, and
    error results.
+5. `bb gherkin-heldout-split`: deterministically splits one JSON IR into a
+   visible and a held-out scenario set, refuses to write the held-out set
+   into a git repository, and can write a fingerprint manifest.
+6. `bb gherkin-heldout-gate`: compares visible and held-out acceptance
+   results and reports the generalization gap with a pass/fail verdict.
+7. `bb gherkin-heldout-verify`: checks a held-out IR against its fingerprint
+   manifest and reports drift.
 
 ```sh
 bb gherkin-parser <feature-file> <json-output>
 bb gherkin-ir-dry-checker [--include-exact] <json-ir> <report-output>
 bb gherkin-mutator --runner-worker "<command>" [options]
+bb gherkin-heldout-split <json-ir> <visible-output> <heldout-output> [heldout-fraction] [seed] [--manifest <path>] [--in-repo-ok]
+bb gherkin-heldout-gate <visible-results> <heldout-results> [max-gap]
+bb gherkin-heldout-verify <manifest> <heldout-ir>
 ```
 
 Go command binaries with the same names are maintained as fallbacks for
@@ -96,6 +106,9 @@ Read the specs in this order:
 4. [mutator-spec.md](mutator-spec.md): mutator command, mutation rules,
    persistent runner-worker protocol, differential manifests, status reporting,
    result classification, and report formats.
+5. [heldout-spec.md](heldout-spec.md): held-out split command, deterministic
+   split rules, gate command, results format, isolation requirements, and
+   generalization gap interpretation.
 
 ## Command Entry Points
 
@@ -114,7 +127,13 @@ If Babashka is unavailable, use the fallback Go binaries:
 gherkin-parser <feature-file> <json-output>
 gherkin-ir-dry-checker [--include-exact] <json-ir> <report-output>
 gherkin-mutator [options]
+gherkin-heldout-split [-manifest <path>] [-in-repo-ok] <json-ir> <visible-output> <heldout-output> [heldout-fraction] [seed]
+gherkin-heldout-gate <visible-results> <heldout-results> [max-gap]
+gherkin-heldout-verify <manifest> <heldout-ir>
 ```
+
+Go fallback options go before positional arguments. Held-out manifests and
+IRs are interchangeable between the Babashka tasks and the Go binaries.
 
 Common generated paths are:
 
@@ -179,6 +198,10 @@ When installing the pipeline in a project, an agent usually:
    important mutations are killed.
 9. Adds parser, generator, runtime, handler, adapter, and mutator coverage at
    the project-appropriate level.
+10. When autonomous agents iterate against the acceptance scenarios, splits
+    the corpus with `bb gherkin-heldout-split`, keeps the held-out set
+    outside the agent-readable context, and gates merges with
+    `bb gherkin-heldout-gate` following [heldout-spec.md](heldout-spec.md).
 
 Normal acceptance should be part of regular verification. Acceptance mutation is
 usually a deliberate quality workflow because it may be slower than normal test

@@ -6,12 +6,9 @@
             [clojure.string :as str])
   (:import [java.io BufferedReader InputStreamReader OutputStreamWriter BufferedWriter]
            [java.nio.charset StandardCharsets]
-           [java.security MessageDigest]
            [java.time Instant]
            [java.lang ProcessBuilder$Redirect]
            [java.util.concurrent Executors TimeUnit Callable]))
-
-(defn- utf8-bytes [s] (.getBytes (str s) StandardCharsets/UTF_8))
 
 (defn- fnv64a [& parts]
   (let [modulus (biginteger 18446744073709551616N)
@@ -20,7 +17,7 @@
      (fn [h b]
        (.mod (.multiply (.xor (biginteger h) (biginteger (bit-and b 0xff))) prime) modulus))
      (biginteger 14695981039346656037N)
-     (mapcat #(concat (utf8-bytes %) [0]) parts))))
+     (mapcat #(concat (aps-json/utf8-bytes %) [0]) parts))))
 
 (defn- parse-int [s]
   (try
@@ -197,10 +194,6 @@
            (str " skipped_scenarios=" skipped-scenarios
                 " skipped_mutations=" skipped-mutations)))))
 
-(defn- sha256 [s]
-  (let [digest (.digest (MessageDigest/getInstance "SHA-256") (utf8-bytes s))]
-    (apply str (map #(format "%02x" (bit-and % 0xff)) digest))))
-
 (defn- strip-mutation-metadata [content]
   (let [state (reduce
                (fn [{:keys [in-manifest lines] :as state} line]
@@ -256,7 +249,7 @@
     (catch Exception _ nil)))
 
 (defn- hash-json [value]
-  (sha256 (json/generate-string value)))
+  (aps-json/sha256 (json/generate-string value)))
 
 (defn- mutation-count-for-scenario [mutations scenario-index]
   (count (filter #(= scenario-index (:scenario %)) mutations)))
@@ -330,7 +323,7 @@
   (let [content (slurp feature-path)
         previous (read-mutation-metadata feature-path)
         cleaned (strip-mutation-metadata content)
-        stamp (sha256 cleaned)
+        stamp (aps-json/sha256 cleaned)
         manifest (cond-> (new-manifest feature-path feature report implementation-hash)
                    previous (merge-reusable-previous-scenarios (:manifest previous) feature level))
         manifest-json (json/generate-string manifest)
@@ -345,7 +338,7 @@
 (defn- feature-stamp-valid? [feature-path]
   (when-let [metadata (read-mutation-metadata feature-path)]
     (and (seq (:stamp metadata))
-         (= (:stamp metadata) (sha256 (strip-mutation-metadata (slurp feature-path)))))))
+         (= (:stamp metadata) (aps-json/sha256 (strip-mutation-metadata (slurp feature-path)))))))
 
 (defn- accepted-skips [cfg mutations]
   (if (or (= (:level cfg) "full") (str/blank? (:feature-path cfg)))
