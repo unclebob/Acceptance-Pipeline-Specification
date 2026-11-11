@@ -39,6 +39,12 @@
                              heldout-path
                              " (pass --in-repo-ok to override)")
                         {})))
+            _ (when (and (not in-repo-ok) manifest (heldout/inside-git-repo? manifest))
+                (throw (ex-info
+                        (str "refusing to write held-out manifest inside a git repository: "
+                             manifest
+                             " (it names held-out scenarios; pass --in-repo-ok to override)")
+                        {})))
             feature (aps-json/read-json-file ir-path)
             {:keys [visible heldout]} (heldout/split-scenarios
                                        feature

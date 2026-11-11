@@ -52,9 +52,10 @@ Behavior:
    original relative scenario order inside each subset.
 6. With `--manifest`, writes a fingerprint manifest of the held-out set.
 
-Repository guard: the command refuses to write the held-out IR into a path
-inside a git repository unless `--in-repo-ok` is given. The held-out set
-belongs outside the agent-readable project tree; the flag exists for local
+Repository guard: the command refuses to write the held-out IR, or a
+fingerprint manifest (it names held-out scenarios), into a path inside a
+git repository unless `--in-repo-ok` is given. The held-out set belongs
+outside the agent-readable project tree; the flag exists for local
 experiments only.
 
 The same input, fraction, and seed always produce the same split. A different

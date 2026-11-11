@@ -47,6 +47,10 @@ func run() int {
 		fmt.Fprintf(os.Stderr, "refusing to write held-out IR inside a git repository: %s (pass --in-repo-ok to override)\n", heldoutPath)
 		return 1
 	}
+	if !inRepoOK && manifestPath != "" && heldout.InsideGitRepo(manifestPath) {
+		fmt.Fprintf(os.Stderr, "refusing to write held-out manifest inside a git repository: %s (it names held-out scenarios; pass --in-repo-ok to override)\n", manifestPath)
+		return 1
+	}
 
 	input, err := os.Open(irPath)
 	if err != nil {
