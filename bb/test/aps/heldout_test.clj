@@ -102,6 +102,7 @@
                               0.25)))))))
 
 (deftest gate-rejects-invalid-inputs
+
   (testing "empty results"
     (is (thrown-with-msg? clojure.lang.ExceptionInfo
                           #"empty"

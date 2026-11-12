@@ -98,9 +98,14 @@ fingerprints, so a manifest written by one verifies under the other.
 ## Gate Command
 
 ```text
-bb gherkin-heldout-gate <visible-results> <heldout-results> [max-gap]
+bb gherkin-heldout-gate [--journal <path>] <visible-results> <heldout-results> [max-gap]
 gherkin-heldout-gate <visible-results> <heldout-results> [max-gap]
 ```
+
+With `--journal` (Babashka task, any position), every gate run appends
+one JSONL record to the file: timestamp, per-set counts, gap, verdict.
+The hidden set is a shared, exhaustible resource: count every access and
+watch the gap trend before rotating or retiring the set.
 
 Default: `max-gap` is `0.05` (5 percentage points).
 

@@ -56,3 +56,10 @@
 
 (defn read-json-file [path]
   (json/parse-string (slurp path) true))
+
+(defn append-jsonl!
+  "Дописывает значение одной строкой JSON (JSONL). Журналы обращений
+  к скрытым наборам растутappend-only."
+  [path value]
+  (io/make-parents path)
+  (spit path (str (json/generate-string value) "\n") :append true))
